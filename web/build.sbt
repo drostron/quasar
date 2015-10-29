@@ -11,5 +11,6 @@ libraryDependencies ++= Seq(
     exclude("org.scalaz.stream", "scalaz-stream_2.11"),
   "org.http4s"           %% "http4s-blaze-server" % http4sVersion % "compile, test",
   "com.github.tototoshi" %% "scala-csv"           % "1.1.2",
-  "org.scodec"           %% "scodec-scalaz"       % "1.1.0"
+  "org.scodec"           %% "scodec-scalaz"       % "1.1.0",
+  "ch.qos.logback" % "logback-classic" % "1.1.3"
 )
