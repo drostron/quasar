@@ -106,8 +106,6 @@ val warts = Seq(
   Wart.TryPartial,
   Wart.Var)
 
-import github.GithubPlugin._
-
 lazy val oneJarSettings = {
   import sbtrelease.ReleasePlugin._
   import sbtrelease.ReleaseStateTransformations._
@@ -125,12 +123,14 @@ lazy val oneJarSettings = {
     st
   }
 
-  com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
-  GithubKeys.assets := { Seq(oneJar.value) },
-  GithubKeys.repoSlug := "quasar-analytics/quasar",
+  lazy val travisBuildNumber = Option(System.getenv("TRAVIS_BUILD_NUMBER"))
 
-  GithubKeys.versionRepo := "slamdata/slamdata.github.io",
-  GithubKeys.versionFile := "release.json",
+  com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ releaseSettings ++ Seq(
+  // GithubRelease.repo := "quasar-analytics/quasar",
+  GithubRelease.repo := "drostron/quasar",
+  GithubRelease.releaseName := "v" + version.value + travisBuildNumber.fold("")("-" + _) + "-" + normalizedName.value,
+  GithubRelease.prerelease := true,
+  GithubRelease.releaseAssets := Seq(oneJar.value),
 
   ReleaseKeys.versionFile := file("version.sbt"),
   ReleaseKeys.useGlobalVersion := true,

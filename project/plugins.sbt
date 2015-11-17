@@ -1,5 +1,5 @@
-resolvers += "Jenkins-CI" at "http://repo.jenkins-ci.org/repo"
-libraryDependencies += "org.kohsuke" % "github-api" % "1.59"
+resolvers += "Era7 maven releases" at "https://s3-eu-west-1.amazonaws.com/releases.era7.com"
+addSbtPlugin("ohnosequences" % "sbt-github-release" % "0.3.0")
 
 addSbtPlugin("org.scoverage"         % "sbt-scoverage"   % "1.0.1")
 addSbtPlugin("org.scoverage"         % "sbt-coveralls"   % "1.0.0.BETA1")
