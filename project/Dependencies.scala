@@ -6,6 +6,7 @@ import sbt._, Keys._
 
 object Dependencies {
   private val argonautVersion = "6.2-M2"
+  private val doobieVersion   = "0.3.0"
   private val http4sVersion   = "0.13.2a"
   private val monocleVersion  = "1.2.2"
   private val nettyVersion    = "4.0.36.Final"
@@ -69,4 +70,9 @@ object Dependencies {
     "ch.qos.logback"       %  "logback-classic"       % "1.1.7",
     "com.propensive"       %% "rapture-json"          % raptureVersion % "test",
     "com.propensive"       %% "rapture-json-json4s"   % raptureVersion % "test")
+
+  val postgresql = Seq(
+    "postgresql"   %  "postgresql"                % "9.1-901-1.jdbc4" % "compile, test",
+    "org.tpolecat" %% "doobie-core"               % doobieVersion     % "compile, test",
+    "org.tpolecat" %% "doobie-contrib-postgresql" % doobieVersion     % "compile, test")
 }

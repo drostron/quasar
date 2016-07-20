@@ -17,7 +17,11 @@
 package quasar.physical
 package postgresql
 
-import quasar.fs._
+import quasar.Predef._
+import quasar.effect.{KeyValueStore, MonotonicSeq}
+import quasar.fp.TaskRef
+import quasar.fp.free.{injectNT, injectFT, mapSNT, EnrichNT}
+import quasar.fs._, ReadFile.ReadHandle, WriteFile.WriteHandle
 import quasar.fs.mount.FileSystemDef, FileSystemDef.DefErrT
 
 import scalaz._, Scalaz._
@@ -26,16 +30,55 @@ import scalaz.concurrent.Task
 package object fs {
   val FsType = FileSystemType("postgresql")
 
-  def definition[S[_]](implicit S0: Task :<: S, S1: PhysErr :<: S):
-      FileSystemDef[Free[S, ?]] =
+  // TODO: names
+
+  type Woes0[A] = Coproduct[
+                    KeyValueStore[ReadHandle,  readfile.PostgreSQLState,  ?],
+                    KeyValueStore[WriteHandle, writefile.PostgreSQLState, ?],
+                    A]
+  type Woes[A]  = Coproduct[MonotonicSeq, Woes0, A]
+
+  def ζ[S[_]](
+    implicit
+    S0: Task :<: S,
+    S1: PhysErr :<: S)
+    : Free[S, Free[Woes, ?] ~> Free[S, ?]] = {
+
+    val ε =
+      (TaskRef(Map.empty[ReadHandle,  readfile.PostgreSQLState])  |@|
+       TaskRef(Map.empty[WriteHandle, writefile.PostgreSQLState]) |@|
+       TaskRef(0L)
+      )((kvR, kvW, i) => (
+       KeyValueStore.fromTaskRef(kvR),
+       KeyValueStore.fromTaskRef(kvW),
+       MonotonicSeq.fromTaskRef(i)
+      ))
+
+    val α: Task[Free[Woes, ?] ~> Free[S, ?]] =
+      ε.map { case (kvR, kvW, seq) =>
+        new (Free[Woes, ?] ~> Free[S, ?]) {
+          def apply[A](fa: Free[Woes, A]): Free[S, A] =
+            mapSNT(injectNT[Task, S] compose (seq :+: kvR :+: kvW))(fa)
+        }
+      }
+
+    injectFT[Task, S].apply(α)
+  }
+
+  def definition[S[_]](implicit
+      S0: Task :<: S,
+      S1: PhysErr :<: S
+    ): FileSystemDef[Free[S, ?]] =
     FileSystemDef.fromPF {
       case (FsType, uri) =>
-        FileSystemDef.DefinitionResult[Free[S, ?]](
-          interpretFileSystem(
-            Empty.queryFile[Free[S, ?]],
-            Empty.readFile[Free[S, ?]],
-            Empty.writeFile[Free[S, ?]],
-            Empty.manageFile[Free[S, ?]]),
-          Free.point(())).point[DefErrT[Free[S, ?], ?]]
+        ζ.map{i =>
+          println("bleh")
+          FileSystemDef.DefinitionResult[Free[S, ?]](
+            i compose interpretFileSystem(
+              queryfile.interpret,
+              readfile.interpret,
+              writefile.interpret,
+              managefile.interpret),
+            Free.point(()))}.liftM[DefErrT]
     }
 }
