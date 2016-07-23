@@ -19,7 +19,7 @@ package postgresql
 
 import quasar.Predef._
 import quasar.effect.{KeyValueStore, MonotonicSeq}
-import quasar.fp.TaskRef
+import quasar.fp.{reflNT, TaskRef}
 import quasar.fp.free.{injectNT, injectFT, mapSNT, EnrichNT}
 import quasar.fs._, ReadFile.ReadHandle, WriteFile.WriteHandle
 import quasar.fs.mount.FileSystemDef, FileSystemDef.DefErrT
@@ -32,11 +32,12 @@ package object fs {
 
   // TODO: names
 
-  type Woes0[A] = Coproduct[
+  type Woes1[A] = Coproduct[
                     KeyValueStore[ReadHandle,  readfile.PostgreSQLState,  ?],
                     KeyValueStore[WriteHandle, writefile.PostgreSQLState, ?],
                     A]
-  type Woes[A]  = Coproduct[MonotonicSeq, Woes0, A]
+  type Woes0[A]  = Coproduct[MonotonicSeq, Woes1, A]
+  type Woes[A]   = Coproduct[Task,         Woes0, A]
 
   def ζ[S[_]](
     implicit
@@ -58,7 +59,7 @@ package object fs {
       ε.map { case (kvR, kvW, seq) =>
         new (Free[Woes, ?] ~> Free[S, ?]) {
           def apply[A](fa: Free[Woes, A]): Free[S, A] =
-            mapSNT(injectNT[Task, S] compose (seq :+: kvR :+: kvW))(fa)
+            mapSNT(injectNT[Task, S] compose (reflNT[Task] :+: seq :+: kvR :+: kvW))(fa)
         }
       }
 
@@ -71,7 +72,7 @@ package object fs {
     ): FileSystemDef[Free[S, ?]] =
     FileSystemDef.fromPF {
       case (FsType, uri) =>
-        ζ.map{i =>
+        ζ.map { i =>
           println("bleh")
           FileSystemDef.DefinitionResult[Free[S, ?]](
             i compose interpretFileSystem(

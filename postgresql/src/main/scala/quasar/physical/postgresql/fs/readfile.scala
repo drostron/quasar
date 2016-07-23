@@ -79,9 +79,8 @@ object readfile {
           kv.get(h)
             .toRight(FileSystemError.unknownReadHandle(h))
             .flatMapF(s => (
-                if (s.rs.next)
-                  // TODO: more appropriate error?
-                  FileSystemError.unknownReadHandle(h).left
+                if (!s.rs.next)
+                  Vector.empty.right
                 else
                   DataCodec.parse(s.rs.getString(1)).bimap(
                     // TODO: more appropriate error?

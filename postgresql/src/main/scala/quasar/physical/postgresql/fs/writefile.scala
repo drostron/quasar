@@ -17,6 +17,7 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
+import quasar.DataCodec
 import quasar.effect.{KeyValueStore, MonotonicSeq}
 import quasar.fs._
 import quasar.physical.postgresql.util._
@@ -27,6 +28,8 @@ import scalaz._, Scalaz._
 
 object writefile {
   import WriteFile._
+
+  implicit val codec = DataCodec.Precise
 
   final case class PostgreSQLState(
     conn: Connection, st: Statement, tableName: String)
@@ -48,8 +51,20 @@ object writefile {
           val Some((dbName, (tablePath, tableName))) = dbAndTableName(file).toOption // also dumb
           println(s"write open dbName: $dbName, tableName: $tableName")
           val conn = dbConn(dbName)
-          conn.setAutoCommit(false)
+          // TODO: what was the origin intent for autocommit false?
+          conn.setAutoCommit(true)
           val st = conn.createStatement()
+
+          val tblExists = tableExists(conn, tableName)
+          println(s"write open tblExists: $tblExists")
+
+          if (!tblExists) {
+            val iq = s"""create table "$tableName" (v json)"""
+            println(s"write open iq: $iq")
+            // TODO: incorrect: how to handle this? detect schema from data? a single json column? other?
+            val r = st.executeUpdate(iq)
+            println(s"write open create r: $r")
+          }
 
           st.setFetchSize(1)
 
@@ -65,36 +80,32 @@ object writefile {
           kv.get(h)
             .toRight(Vector(FileSystemError.unknownWriteHandle(h)))
             .map { s =>
-              val tblExists = tableExists(s.conn, s.tableName)
-              println(s"write write tblExists: $tblExists")
-
-              if (!tblExists) {
-                val iq = s"""create table "${s.tableName}" (i int, j varchar(50))"""
-                println(s"write write iq: $iq")
-                // TODO: incorrect: how to handle this? detect schema from data? a single json column? other?
-                s.st.executeUpdate(iq)
-              }
-
-              val q =
+              def insert(json: String) =
                 s"""insert into "${s.tableName}"
                    |  select * from
-                   |  json_populate_record(NULL::"${s.tableName}", '{"i": 1, "j": "well"}')
+                   |  json_populate_record(NULL::"${s.tableName}", '{"v": $json}')
                    |""".stripMargin
 
-              println(s"write write q: $q")
+               val _ = data.map { d =>
+                 val q = insert {
+                   val Some(v) = DataCodec.render(d).toOption
+                   v
+                 }
+                //  println(s"write write q: $q")
 
-              // TODO: do something with r?
-              val r = s.st.executeUpdate(q)
+                 // TODO: do something with r?
+                 val r = s.st.executeUpdate(q)
+               }
+
               Vector.empty }
             .merge[Vector[FileSystemError]]
 
         case Close(h) =>
-          ???
-          // (for {
-          //   s <- kv.get(h)
-          //   _ =  s.st.close
-          //   _ <- kv.delete(h).liftM[OptionT]
-          // } yield ()).run.void
+          (for {
+            s <- kv.get(h)
+            _ =  s.st.close
+            _ <- kv.delete(h).liftM[OptionT]
+          } yield ()).run.void
 
       }
     }

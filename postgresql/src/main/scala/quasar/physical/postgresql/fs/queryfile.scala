@@ -17,17 +17,33 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
+import quasar.fp.free.injectFT
 import quasar.fs._
+import quasar.physical.postgresql.{Planner, SQLAST}, Planner._, Planner.Planner._
+import quasar.physical.postgresql.util._
+import quasar.qscript._
 
-import scalaz._
+import matryoshka._, Recursive.ops._
+import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
 object queryfile {
   import QueryFile._
 
-  def interpret[S[_]]: QueryFile ~> Free[S, ?] = new (QueryFile ~> Free[S, ?]) {
+import quasar.Planner.PlannerError
+
+  def evaluate(sqlAST: SQLAST, destinationPath: APath): Task[AFile] = ???
+
+  def interpret[S[_]](implicit S0: Task :<: S): QueryFile ~> Free[S, ?] = new (QueryFile ~> Free[S, ?]) {
     def apply[A](qf: QueryFile[A]) = qf match {
-      case ExecutePlan(lp, out) =>
-        ???
+      case ExecutePlan(lp, out) => (
+          for {
+            qs  <- EitherT(convertToQScript(lp).point[Free[S, ?]])
+            sql <- EitherT(qs.cataM(
+                     Planner.Planner[QScriptProject[Fix, ?]].plan).point[Free[S, ?]])
+            dst <- injectFT[Task, S].apply(evaluate(sql, out)).liftM[EitherT[?[_], PlannerError, ?]]
+          } yield dst
+        ).leftMap(FileSystemError.planningFailed(lp,_)).run.strengthL(Vector.empty)
 
       case EvaluatePlan(lp) =>
         ???
@@ -45,7 +61,10 @@ object queryfile {
         ???
 
       case FileExists(file) =>
-        ???
+        println(s"FileExists: $file")
+        val Some((dbName, (tablePath, tableName))) = dbAndTableName(file).toOption
+        val conn = dbConn(dbName) // TODO: will except
+        tableExists(conn, tableName).point[Free[S, ?]]
     }
   }
 }
