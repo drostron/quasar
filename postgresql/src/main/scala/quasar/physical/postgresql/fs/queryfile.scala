@@ -24,6 +24,7 @@ import quasar.physical.postgresql.util._
 import quasar.qscript._
 
 import matryoshka._, Recursive.ops._
+import pathy.Path.{DirName, FileName}
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
@@ -58,11 +59,12 @@ import quasar.Planner.PlannerError
         ???
 
       case ListContents(dir) =>
-        ???
+        println(s"queryfile ListContents: $dir")
+        listContents(dir)
 
       case FileExists(file) =>
         // TODO: handle failures? might need to update the algebra term
-        println(s"FileExists: $file")
+        println(s"queryfile FileExists: $file")
         (for {
           dt  <- dbTableFromPath(file)
           cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
@@ -70,4 +72,22 @@ import quasar.Planner.PlannerError
         } yield r).leftMap(κ(false)).merge[Boolean]
     }
   }
+
+  // TODO: handle ☠
+  def listContents[S[_]](
+      dir: APath
+    )(implicit
+      S0: Task :<: S
+    ): Free[S, FileSystemError \/ Set[PathSegment]] =
+    (for {
+      dt  <- dbTableFromPath(dir)
+      cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
+      r   <- tablesWithPrefix(cxn, dt.table).liftM[FileSystemErrT]
+    } yield r
+      .map(_.stripPrefix(dt.table).stripPrefix("☠").split("☠").toList)
+      .collect {
+        case h :: Nil => FileName(h).right
+        case h :: _   => DirName(h).left
+      }.toSet).run
+
 }
