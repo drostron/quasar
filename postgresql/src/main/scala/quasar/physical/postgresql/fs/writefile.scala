@@ -62,10 +62,12 @@ object writefile {
           kv.get(h)
             .toRight(Vector(FileSystemError.unknownWriteHandle(h)))
             .map { s =>
+              def escape(json: String) = json.replace("'", "''")
+
               def insert(json: String) =
                 s"""insert into "${s.tableName}"
                    |  select * from
-                   |  json_populate_record(NULL::"${s.tableName}", '{"v": $json}')
+                   |  json_populate_record(NULL::"${s.tableName}", '{"v": ${escape(json)}}')
                    |""".stripMargin
 
               s.conn.setAutoCommit(false)
@@ -75,7 +77,7 @@ object writefile {
                   val Some(v) = DataCodec.render(d).toOption
                     v
                 }
-                //  println(s"write write q: $q")
+                // println(s"write write q: $q")
 
                 // TODO: do something with r?
                 val r = s.st.executeUpdate(q)
