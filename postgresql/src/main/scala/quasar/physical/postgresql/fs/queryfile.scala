@@ -17,7 +17,7 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
-import quasar.fp.free.injectFT
+import quasar.fp.{κ, free}, free.injectFT
 import quasar.fs._
 import quasar.physical.postgresql.{Planner, SQLAST}, Planner._, Planner.Planner._
 import quasar.physical.postgresql.util._
@@ -61,10 +61,13 @@ import quasar.Planner.PlannerError
         ???
 
       case FileExists(file) =>
+        // TODO: handle failures? might need to update the algebra term
         println(s"FileExists: $file")
-        val Some((dbName, (tablePath, tableName))) = dbAndTableName(file).toOption
-        val conn = dbConn(dbName) // TODO: will except
-        tableExists(conn, tableName).point[Free[S, ?]]
+        (for {
+          dt  <- dbTableFromPath(file)
+          cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
+          r   <- tableExists(cxn, dt.table).liftM[FileSystemErrT]
+        } yield r).leftMap(κ(false)).merge[Boolean]
     }
   }
 }

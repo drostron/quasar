@@ -23,28 +23,62 @@ import java.sql.{Connection, DriverManager}
 
 import pathy.Path
 import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
+// TODO: handle exceptions more explicitly
+// TODO: something better than Free.liftF(S0.inj(Task.delay ... ?
 object util {
 
-  val bleh = java.lang.Class.forName("org.postgresql.Driver")
+  // TODO: find another way?
+  val pgDriver = java.lang.Class.forName("org.postgresql.Driver")
 
-  // TODO: naive for the moment
-  def dbConn(dbName: String) = DriverManager.getConnection(
-    s"jdbc:postgresql://192.168.99.100/$dbName?user=postgres&password=postgres")
+  final case class DbTable(db: String, table: String)
 
-  // culted from mongodb Collection, TODO: move to common place if becomes common
-  def dbAndTableName(f: APath): String \/ (String, (IList[String], String)) =
+  def dbCxn[S[_]](
+    dbName: String
+  )(implicit
+    S0: Task :<: S
+  ): Free[S, Connection] =
+    Free.liftF(S0.inj(Task.delay {
+      DriverManager.getConnection(
+        s"jdbc:postgresql://192.168.99.100/$dbName?user=postgres&password=postgres")
+    }))
+
+  // TODO: going with ☠ style path table names for the moment, likely not what we want
+  def dbTableFromPath[S[_]](f: APath): FileSystemErrT[Free[S, ?], DbTable] =
+    EitherT.fromDisjunction[Free[S, ?]](
       Path.flatten(None, None, None, Some(_), Some(_), f)
         .toIList.unite.uncons(
-          "no database specified".left,
-          //Path.posixCodec.printPath(f)
-          (h, t) => (h, (t, t.intercalate("☠"))).right) // even more naive
+          FileSystemError.pathErr(PathError.invalidPath(f, "no database specified")).left,
+          (h, t) => DbTable(h, t.intercalate("☠")).right))
 
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
-  def tableExists(conn: Connection, tableName: String): Boolean = {
-    val m = conn.getMetaData
-    val r = m.getTables(null, null, tableName, null)
-    r.next
-  }
+  def tableExists[S[_]](
+      conn: Connection, tableName: String
+    )(implicit
+      S0: Task :<: S
+    ): Free[S, Boolean] =
+    Free.liftF(S0.inj(Task.delay {
+      val m = conn.getMetaData
+      val r = m.getTables(null, null, tableName, null)
+      r.next
+    }))
+
+  @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.While"))
+  def tablesWithPrefix[S[_]](
+      conn: Connection, tableNamePrefix: String
+    )(implicit
+      S0: Task :<: S
+    ): Free[S, List[String]] =
+    Free.liftF(S0.inj(Task.delay {
+      val st = conn.createStatement()
+      val rs = st.executeQuery(
+        s"""select table_name from information_schema.tables where table_name like '$tableNamePrefix%'""")
+      var bleh = Vector[String]()
+      while(rs.next) {
+        bleh = bleh :+ rs.getString(1)
+      }
+      bleh.toList
+  }))
 
 }

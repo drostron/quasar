@@ -32,18 +32,18 @@ package object fs {
 
   // TODO: names
 
-  type Woes1[A] = Coproduct[
+  type ψ1[A] = Coproduct[
                     KeyValueStore[ReadHandle,  readfile.PostgreSQLState,  ?],
                     KeyValueStore[WriteHandle, writefile.PostgreSQLState, ?],
                     A]
-  type Woes0[A]  = Coproduct[MonotonicSeq, Woes1, A]
-  type Woes[A]   = Coproduct[Task,         Woes0, A]
+  type ψ0[A]  = Coproduct[MonotonicSeq, ψ1, A]
+  type ψ[A]   = Coproduct[Task,         ψ0, A]
 
   def ζ[S[_]](
     implicit
     S0: Task :<: S,
     S1: PhysErr :<: S)
-    : Free[S, Free[Woes, ?] ~> Free[S, ?]] = {
+    : Free[S, Free[ψ, ?] ~> Free[S, ?]] = {
 
     val ε =
       (TaskRef(Map.empty[ReadHandle,  readfile.PostgreSQLState])  |@|
@@ -55,10 +55,10 @@ package object fs {
        MonotonicSeq.fromTaskRef(i)
       ))
 
-    val α: Task[Free[Woes, ?] ~> Free[S, ?]] =
+    val α: Task[Free[ψ, ?] ~> Free[S, ?]] =
       ε.map { case (kvR, kvW, seq) =>
-        new (Free[Woes, ?] ~> Free[S, ?]) {
-          def apply[A](fa: Free[Woes, A]): Free[S, A] =
+        new (Free[ψ, ?] ~> Free[S, ?]) {
+          def apply[A](fa: Free[ψ, A]): Free[S, A] =
             mapSNT(injectNT[Task, S] compose (reflNT[Task] :+: seq :+: kvR :+: kvW))(fa)
         }
       }
@@ -73,7 +73,6 @@ package object fs {
     FileSystemDef.fromPF {
       case (FsType, uri) =>
         ζ.map { i =>
-          println("bleh")
           FileSystemDef.DefinitionResult[Free[S, ?]](
             i compose interpretFileSystem(
               queryfile.interpret,

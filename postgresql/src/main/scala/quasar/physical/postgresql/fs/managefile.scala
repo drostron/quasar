@@ -23,42 +23,35 @@ import quasar.physical.postgresql.util._
 
 import pathy.Path._
 import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
 object managefile {
   import ManageFile._
 
+  // TODO: move more into helper methods
   def interpret[S[_]](implicit
-    S0: MonotonicSeq :<: S
+    S0: MonotonicSeq :<: S,
+    // TODO: something more precise than Task?
+    S1: Task :<: S
     ): ManageFile ~> Free[S, ?] = new (ManageFile ~> Free[S, ?]) {
     val seq = MonotonicSeq.Ops[S]
 
     def apply[A](fs: ManageFile[A]) = fs match {
       case Move(scenario, semantics) =>
-        val Some((srcDbName, (srcTablePath, srcTableName))) =
-          dbAndTableName(scenario.src).toOption
-        val Some((dstDbName, (dstTablePath, dstTableName))) =
-          dbAndTableName(scenario.dst).toOption
-
-        println(s"move:\n  ${scenario.src}\n  ${scenario.dst}")
-
-        if (srcDbName =/= dstDbName) {
-          FileSystemError.pathErr(
-            PathError.invalidPath(scenario.dst, "different db from src path"))
-              .left
-              .point[Free[S, ?]]
-        } else {
-
-          val conn = dbConn(srcDbName) // TODO: will except
-
-          val q = s"""ALTER TABLE "$srcTableName" RENAME TO "$dstTableName" """
-          val st = conn.createStatement()
-          val _ = st.executeUpdate(q)
-          ().right.point[Free[S, ?]]
-        }
+        (for {
+          src <- dbTableFromPath(scenario.src)
+          dst <- dbTableFromPath(scenario.dst)
+          _   <- EitherT.fromDisjunction[Free[S, ?]] {
+                   if (src.db =/= dst.db) FileSystemError.pathErr(
+                     PathError.invalidPath(scenario.dst, "different db from src path")).left
+                   else
+                     ().right
+                 }
+          _   <- move(src.db, src.table, dst.table)
+        } yield ()).run
 
       case Delete(path) =>
-        // TODO: impl
-        Free.point(().right)
+        delete(path)
 
       case TempFile(path) =>
         seq.next.map { i =>
@@ -70,4 +63,34 @@ object managefile {
         }
     }
   }
+
+  // TODO: more appropriate name
+  // TODO: handle exceptions
+  def move[S[_]](
+      db: String, src: String, dst: String
+    )(implicit
+      S0: Task :<: S
+    ): FileSystemErrT[Free[S, ?], Unit] =
+    dbCxn(db).map { cxn =>
+      val q = s"""ALTER TABLE "$src" RENAME TO "$dst" """
+      val st = cxn.createStatement()
+      val _ = st.executeUpdate(q)
+    }.liftM[FileSystemErrT]
+
+  def delete[S[_]](path: APath)(implicit S0: Task :<: S): Free[S, FileSystemError \/ Unit] = {
+    for {
+      dt  <- dbTableFromPath(path)
+      cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
+      tbs <- tablesWithPrefix(cxn, dt.table).liftM[FileSystemErrT]
+    } yield {
+      println(s"managefile delete:\n  path:   $path\n  tables: $tbs")
+      tbs.foreach { tableName =>
+        val q = s"""DROP TABLE "$tableName" """
+        val st = cxn.createStatement()
+        val _ = st.executeUpdate(q)
+        st.close()
+      }
+    }
+  }.run
+
 }

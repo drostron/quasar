@@ -73,14 +73,14 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
       "open returns PathNotFound when file DNE" >>* {
         val dne = rootDir </> dir("doesnt") </> file("exist")
         read.unsafe.open(dne, 0L, None).run map { r =>
-          r.toEither must beLeft(pathErr(pathNotFound(dne)))
+          r must_=== pathErr(pathNotFound(dne)).left
         }
       }
 
       "read unopened file handle returns UnknownReadHandle" >>* {
         val h = ReadHandle(rootDir </> file("f1"), 42)
         read.unsafe.read(h).run map { r =>
-          r.toEither must beLeft(unknownReadHandle(h))
+          r must_=== unknownReadHandle(h).left
         }
       }
 
@@ -98,12 +98,12 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
 
       "scan an empty file succeeds, yielding no data" >> {
         val r = runLogT(run, read.scanAll(emptyFile.file))
-        r.runEither must beRight((xs: scala.collection.IndexedSeq[Data]) => xs must beEmpty)
+        r.run.unsafePerformSync must_=== Vector.empty.right
       }
 
       "scan with offset zero and no limit reads entire file" >> {
         val r = runLogT(run, read.scan(smallFile.file, 0L, None))
-        r.runEither must beRight(smallFile.data.toList)
+        r.run.unsafePerformSync must_=== smallFile.data.toList.toVector.right
       }
 
       "scan with offset = |file| and no limit yields no data" >> {

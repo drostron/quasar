@@ -25,6 +25,7 @@ import quasar.physical.postgresql.util._
 import java.sql.{Connection, Statement}
 
 import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
 object writefile {
   import WriteFile._
@@ -35,48 +36,29 @@ object writefile {
     conn: Connection, st: Statement, tableName: String)
 
   @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
-  def interpret[S[_]](
-    implicit
-    S0: KeyValueStore[WriteHandle, PostgreSQLState, ?] :<: S,
-    S1: MonotonicSeq :<: S)
-    : WriteFile ~> Free[S, ?] = {
+  def interpret[S[_]](implicit
+      S0: KeyValueStore[WriteHandle, PostgreSQLState, ?] :<: S,
+      S1: MonotonicSeq :<: S,
+      S2: Task :<: S
+    ): WriteFile ~> Free[S, ?] = {
     val kv = KeyValueStore.Ops[WriteHandle, PostgreSQLState, S]
     val seq = MonotonicSeq.Ops[S]
 
     new (WriteFile ~> Free[S, ?]) {
       def apply[A](wf: WriteFile[A]) = wf match {
         case Open(file) =>
-          println(s"write open file: $file")
-          // TODO: o_O
-          val Some((dbName, (tablePath, tableName))) = dbAndTableName(file).toOption // also dumb
-          println(s"write open dbName: $dbName, tableName: $tableName")
-          val conn = dbConn(dbName)
-          // TODO: what was the origin intent for autocommit false?
-          conn.setAutoCommit(true)
-          val st = conn.createStatement()
+          // println(s"write open file: $file")
+          (for {
+            dt   <- dbTableFromPath(file)
+            cxn  <- dbCxn(dt.db).liftM[FileSystemErrT]
+            pgSt <- open(cxn, dt.table).liftM[FileSystemErrT]
+            i    <- seq.next.liftM[FileSystemErrT]
+            h    =  WriteHandle(file, i)
+            _    <- kv.put(h, pgSt).liftM[FileSystemErrT]
+          } yield h).run
 
-          val tblExists = tableExists(conn, tableName)
-          println(s"write open tblExists: $tblExists")
-
-          if (!tblExists) {
-            val iq = s"""create table "$tableName" (v json)"""
-            println(s"write open iq: $iq")
-            // TODO: incorrect: how to handle this? detect schema from data? a single json column? other?
-            val r = st.executeUpdate(iq)
-            println(s"write open create r: $r")
-          }
-
-          st.setFetchSize(1)
-
-          for {
-            i <- seq.next
-            h =  WriteHandle(file, i)
-            _ <- kv.put(h, PostgreSQLState(conn, st, tableName))
-          } yield h.right
-
-        // TODO: handle data
         case Write(h, data) =>
-          println(s"write write: $h")
+          // println(s"write write: $h")
           kv.get(h)
             .toRight(Vector(FileSystemError.unknownWriteHandle(h)))
             .map { s =>
@@ -86,16 +68,20 @@ object writefile {
                    |  json_populate_record(NULL::"${s.tableName}", '{"v": $json}')
                    |""".stripMargin
 
-               val _ = data.map { d =>
-                 val q = insert {
-                   val Some(v) = DataCodec.render(d).toOption
-                   v
-                 }
+              s.conn.setAutoCommit(false)
+
+              val _ = data.map { d =>
+                val q = insert {
+                  val Some(v) = DataCodec.render(d).toOption
+                    v
+                }
                 //  println(s"write write q: $q")
 
-                 // TODO: do something with r?
-                 val r = s.st.executeUpdate(q)
-               }
+                // TODO: do something with r?
+                val r = s.st.executeUpdate(q)
+              }
+
+              s.conn.commit()
 
               Vector.empty }
             .merge[Vector[FileSystemError]]
@@ -110,5 +96,30 @@ object writefile {
       }
     }
   }
+
+  // TODO: more appropriate name
+  // TODO: val _'s
+  def open[S[_]](
+      cxn: Connection, tableName: String
+    )(implicit
+      S0: Task :<: S
+    ): Free[S, PostgreSQLState] =
+    tableExists(cxn, tableName).map { tblExists =>
+      // println(s"write open tblExists: $tblExists")
+
+      val st = cxn.createStatement()
+
+      if (!tblExists) {
+        val iq = s"""create table "$tableName" (v json)"""
+        // println(s"write open iq: $iq")
+        // TODO: incorrect: how to handle this? detect schema from data? a single json column? other?
+        val r = st.executeUpdate(iq)
+        // println(s"write open create r: $r")
+      }
+
+      st.setFetchSize(1)
+
+      PostgreSQLState(cxn, st, tableName)
+    }
 
 }
