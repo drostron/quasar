@@ -53,9 +53,9 @@ object readfile {
           (for {
             dt   <- dbTableFromPath(file)
             cxn  <- dbCxn(dt.db).liftM[FileSystemErrT]
-            _    <- tableExists(cxn, dt.table)
-                      .map(_ either(()) or(FileSystemError.pathErr(PathError.pathNotFound(file))))
-                      .liftM[FileSystemErrT]
+            _    <- EitherT(tableExists(cxn, dt.table).map(_
+                      .either(())
+                      .or(FileSystemError.pathErr(PathError.pathNotFound(file)))))
             pgSt <- open(cxn, dt.table, offset, limit).liftM[FileSystemErrT]
             i    <- seq.next.liftM[FileSystemErrT]
             h    =  ReadHandle(file, i)
@@ -97,17 +97,16 @@ object readfile {
       S0: Task :<: S
     ): Free[S, PostgreSQLState] =
     Free.liftF(S0.inj(Task.delay {
-      val st = cxn.createStatement(
-        ResultSet.TYPE_SCROLL_INSENSITIVE,
-        ResultSet.CONCUR_READ_ONLY)
+      val st = cxn.createStatement()
 
       st.setFetchSize(1)
 
-      val _ = limit.map(lim => st.setMaxRows(lim.unwrap.toInt)) // TODO: toInt
+      // TODO: toInt
+      val lim = limit.map(lim => s"limit ${lim.unwrap.toInt}").orZero
 
-      val rs = st.executeQuery(s"""select v from "$tableName"""")
-
-      val __ = rs.absolute(offset.unwrap.toInt) // TODO: toInt
+      // TODO: toInt
+      val rs = st.executeQuery(
+        s"""select v from "$tableName" $lim offset ${offset.unwrap.toInt}""")
 
       PostgreSQLState(cxn, st, rs)
     }))

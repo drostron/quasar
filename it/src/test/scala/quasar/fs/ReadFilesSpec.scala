@@ -103,12 +103,12 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
 
       "scan with offset zero and no limit reads entire file" >> {
         val r = runLogT(run, read.scan(smallFile.file, 0L, None))
-        r.run.unsafePerformSync must_=== smallFile.data.toList.toVector.right
+        r.run.unsafePerformSync must_=== smallFile.data.toVector.right
       }
 
       "scan with offset = |file| and no limit yields no data" >> {
         val r = runLogT(run, read.scan(smallFile.file, smallFileSize, None))
-        r.runEither must beRight((xs: scala.collection.IndexedSeq[Data]) => xs must beEmpty)
+        r.run.unsafePerformSync must_=== Vector.empty.right
       }
 
       /** TODO: This just specifies the default MongoDB behavior as that was
@@ -117,7 +117,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
         */
       "scan with offset k, where k > |file|, and no limit succeeds with empty result" >> {
         val r = runLogT(run, read.scan(smallFile.file, smallFileSize |+| 1L, None))
-        r.runEither must beRight((xs: scala.collection.IndexedSeq[Data]) => xs must beEmpty)
+        r.run.unsafePerformSync must_=== Vector.empty.right
       }
 
       "scan with offset k > 0 and no limit skips first k data" ! prop { k: Int Refined RPositive =>
@@ -125,14 +125,14 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
         val d = smallFile.data.zip(EStream.iterate(0)(_ + 1))
                   .dropWhile(_._2 < k.get).map(_._1)
 
-        r.runEither must beRight(d.toList)
+        r.run.unsafePerformSync must_=== d.toVector.right
       }.set(minTestsOk = 10)
 
       "scan with offset zero and limit j stops after j data" ! prop { j: Int Refined Interval.Open[W.`1`.T, SmallFileSize] =>
         val limit = Positive(j.get.toLong).get // Not ideal, but simplest solution for now
         val r = runLogT(run, read.scan(smallFile.file, 0L, Some(limit)))
 
-        r.runEither must beRight(smallFile.data.take(j.get).toList)
+        r.run.unsafePerformSync must_=== smallFile.data.take(j.get).toVector.right
       }.set(minTestsOk = 10)
 
       "scan with offset k and limit j takes j data, starting from k" ! Prop.forAll(
@@ -144,7 +144,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
                   .dropWhile(_._2 < k.get).map(_._1)
                   .take(j.get)
 
-        r.runEither must beRight(d.toList)
+        r.run.unsafePerformSync must_=== d.toVector.right
       }.set(minTestsOk = 5)
 
       "scan with offset zero and limit j, where j > |file|, stops at end of file" ! prop { j: Int Refined Greater[SmallFileSize] =>
@@ -152,7 +152,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
           val r = runLogT(run, read.scan(smallFile.file, 0L, limit))
 
           (j.get must beGreaterThan(smallFile.data.length)) and
-            (r.runEither must beRight(smallFile.data.toList))
+          (r.run.unsafePerformSync must_=== smallFile.data.toVector.right)
       }.set(minTestsOk = 10)
 
       "scan very long file is stack-safe" >> {
@@ -163,9 +163,10 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) w
       // TODO: This was copied from existing tests, but what is being tested?
       "scan very long file twice" >> {
         val r = runLogT(run, read.scanAll(veryLongFile.file).foldMap(_ => 1))
-        val l = List(veryLongFile.data.length).toIndexedSeq
+        val l = Vector(veryLongFile.data.length)
 
-        (r.runEither must beRight(l)) and (r.runEither must beRight(l))
+        (r.run.unsafePerformSync must_=== l.right) and
+        (r.run.unsafePerformSync must_=== l.right)
       }
 
       step(deleteForReading(fs.setupInterpM).runVoid)
