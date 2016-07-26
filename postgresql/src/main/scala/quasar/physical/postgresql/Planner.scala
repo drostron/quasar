@@ -21,7 +21,7 @@ import quasar.Planner.PlannerError
 import quasar.qscript, qscript._, MapFuncs._
 
 import matryoshka._
-import scalaz._
+import scalaz._, Scalaz._
 import simulacrum._
 
 object Planner {
@@ -35,8 +35,11 @@ object Planner {
     def plan: AlgebraM[PlannerError \/ ?, QS, SQLAST]
   }
   object Planner {
-    implicit def coproduct[F[_]: Planner, G[_]: Planner]:
-        Planner[Coproduct[F, G, ?]] = ???
+    implicit def coproduct[F[_]: Planner, G[_]: Planner]: Planner[Coproduct[F, G, ?]] =
+      new Planner[Coproduct[F, G, ?]] {
+        def plan: AlgebraM[PlannerError \/ ?, Coproduct[F, G, ?], SQLAST] =
+          _.run.fold(Planner[F].plan, Planner[G].plan)
+      }
   }
 
   implicit def qscriptCore[T[_[_]]]: Planner[QScriptCore[T, ?]] =
@@ -58,17 +61,25 @@ object Planner {
 
   implicit def const: Planner[Const[DeadEnd, ?]] =
     new Planner[Const[DeadEnd, ?]] {
-      def plan: AlgebraM[PlannerError \/ ?, Const[DeadEnd, ?], SQLAST] = ???
+      def plan: AlgebraM[PlannerError \/ ?, Const[DeadEnd, ?], SQLAST] = {
+        case Const(Root) => SQLAST.Literal(SQLData.SQLNull).right
+        case Const(Empty) => ???
+      }
     }
 
   implicit def projectBucket[T[_[_]]]: Planner[ProjectBucket[T, ?]] =
     new Planner[ProjectBucket[T, ?]] {
-      def plan: AlgebraM[PlannerError \/ ?, ProjectBucket[T, ?], SQLAST] = ???
+      def plan: AlgebraM[PlannerError \/ ?, ProjectBucket[T, ?], SQLAST] = {
+        case BucketField(src, value, name)  => ???
+        case BucketIndex(src, value, index) => ???
+      }
     }
 
   implicit def thetajoin[T[_[_]]]: Planner[ThetaJoin[T, ?]] =
     new Planner[ThetaJoin[T, ?]] {
-      def plan: AlgebraM[PlannerError \/ ?, ThetaJoin[T, ?], SQLAST] = ???
+      def plan: AlgebraM[PlannerError \/ ?, ThetaJoin[T, ?], SQLAST] = {
+        case ThetaJoin(src, lBranch, rBranch, on, f, combine) => ???
+      }
     }
 
 
