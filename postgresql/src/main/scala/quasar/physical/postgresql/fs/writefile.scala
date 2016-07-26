@@ -113,6 +113,7 @@ object writefile {
       val st = cxn.createStatement()
 
       if (!tblExists) {
+        // TODO: check for table name length and error if too long, additionally is there an alternative approach to avoid this limitation
         val iq = s"""create table "$tableName" (v json)"""
         // println(s"write open iq: $iq")
         // TODO: incorrect: how to handle this? detect schema from data? a single json column? other?

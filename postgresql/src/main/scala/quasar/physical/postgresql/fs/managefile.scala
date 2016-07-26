@@ -73,13 +73,10 @@ object managefile {
                        ().right
                    }
       cxn       <- dbCxn(src.db).liftM[FileSystemErrT]
-
-      // TODO: move tables at path...
-      // srcTables <- tablesWithPrefix(cxn, src.table)
-
       srcExists <- tableExists(cxn, src.table).liftM[FileSystemErrT]
+      srcTables <- tablesWithPrefix(cxn, src.table).liftM[FileSystemErrT]
       _         <- EitherT.fromDisjunction[Free[S, ?]] {
-                     if (!srcExists)
+                     if (srcTables.isEmpty)
                        FileSystemError.pathErr(PathError.pathNotFound(scenario.src)).left
                      else
                        ().right
@@ -94,12 +91,23 @@ object managefile {
                        ().right[FileSystemError]
                    })
     } yield {
-      val q = s"""ALTER TABLE "${src.table}" RENAME TO "${dst.table}" """
-      println(s"q: $q")
       val st = cxn.createStatement()
       cxn.setAutoCommit(false)
-      val _  = if (dstExists) st.executeUpdate(s"""DROP TABLE "${dst.table}" """)
-      val __ = st.executeUpdate(q)
+
+      val srcTablesToMove =
+        if (MoveScenario.dirToDir.isMatching(scenario)) srcTables
+        else List(src.table)
+
+      (srcTablesToMove).foreach { srcTable =>
+        val dstTable = dst.table + srcTable.stripPrefix(src.table)
+
+        val _  = st.executeUpdate(s"""DROP TABLE IF EXISTS "$dstTable" """)
+
+        val q = s"""ALTER TABLE "$srcTable" RENAME TO "$dstTable" """
+        println(s"q: $q")
+        val __ = st.executeUpdate(q)
+      }
+
       cxn.commit()
       st.close
       cxn.close
