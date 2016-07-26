@@ -54,24 +54,24 @@ object util {
 
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
   def tableExists[S[_]](
-      conn: Connection, tableName: String
+      cxn: Connection, tableName: String
     )(implicit
       S0: Task :<: S
     ): Free[S, Boolean] =
     Free.liftF(S0.inj(Task.delay {
-      val m = conn.getMetaData
+      val m = cxn.getMetaData
       val r = m.getTables(null, null, tableName, null)
       r.next
     }))
 
   @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.While"))
   def tablesWithPrefix[S[_]](
-      conn: Connection, tableNamePrefix: String
+      cxn: Connection, tableNamePrefix: String
     )(implicit
       S0: Task :<: S
     ): Free[S, List[String]] =
     Free.liftF(S0.inj(Task.delay {
-      val st = conn.createStatement()
+      val st = cxn.createStatement()
       val rs = st.executeQuery(
         s"""select table_name from information_schema.tables where table_name like '$tableNamePrefix%'""")
       var bleh = Vector[String]()

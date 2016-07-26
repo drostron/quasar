@@ -83,6 +83,10 @@ import quasar.Planner.PlannerError
       dt  <- dbTableFromPath(dir)
       cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
       r   <- tablesWithPrefix(cxn, dt.table).liftM[FileSystemErrT]
+      _   <- EitherT.fromDisjunction[Free[S, ?]] {
+               if (r.isEmpty) FileSystemError.pathErr(PathError.pathNotFound(dir)).left
+               else ().right
+             }
     } yield r
       .map(_.stripPrefix(dt.table).stripPrefix("☠").split("☠").toList)
       .collect {

@@ -35,7 +35,7 @@ object readfile {
 
   implicit val codec = DataCodec.Precise
 
-  final case class PostgreSQLState(conn: Connection, st: Statement, rs: ResultSet)
+  final case class PostgreSQLState(cxn: Connection, st: Statement, rs: ResultSet)
 
   def interpret[S[_]](
     implicit
@@ -82,7 +82,7 @@ object readfile {
             s <- kv.get(h)
             _ =  s.rs.close
             _ =  s.st.close
-            _ =  s.conn.close
+            _ =  s.cxn.close
             _ <- kv.delete(h).liftM[OptionT]
           } yield ()).run.void
       }

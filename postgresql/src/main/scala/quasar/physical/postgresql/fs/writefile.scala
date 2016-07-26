@@ -33,7 +33,7 @@ object writefile {
   implicit val codec = DataCodec.Precise
 
   final case class PostgreSQLState(
-    conn: Connection, st: Statement, tableName: String)
+    cxn: Connection, st: Statement, tableName: String)
 
   @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
   def interpret[S[_]](implicit
@@ -70,7 +70,7 @@ object writefile {
                    |  json_populate_record(NULL::"${s.tableName}", '{"v": ${escape(json)}}')
                    |""".stripMargin
 
-              s.conn.setAutoCommit(false)
+              s.cxn.setAutoCommit(false)
 
               val _ = data.map { d =>
                 val q = insert {
@@ -83,7 +83,7 @@ object writefile {
                 val r = s.st.executeUpdate(q)
               }
 
-              s.conn.commit()
+              s.cxn.commit()
 
               Vector.empty }
             .merge[Vector[FileSystemError]]
@@ -92,6 +92,7 @@ object writefile {
           (for {
             s <- kv.get(h)
             _ =  s.st.close
+            _ =  s.cxn.close
             _ <- kv.delete(h).liftM[OptionT]
           } yield ()).run.void
 

@@ -38,19 +38,11 @@ object managefile {
 
     def apply[A](fs: ManageFile[A]) = fs match {
       case Move(scenario, semantics) =>
-        (for {
-          src <- dbTableFromPath(scenario.src)
-          dst <- dbTableFromPath(scenario.dst)
-          _   <- EitherT.fromDisjunction[Free[S, ?]] {
-                   if (src.db =/= dst.db) FileSystemError.pathErr(
-                     PathError.invalidPath(scenario.dst, "different db from src path")).left
-                   else
-                     ().right
-                 }
-          _   <- move(src.db, src.table, dst.table)
-        } yield ()).run
+        println(s"managefile Move: $scenario, $semantics")
+        move(scenario, semantics)
 
       case Delete(path) =>
+        println(s"managefile Delete: $path")
         delete(path)
 
       case TempFile(path) =>
@@ -67,21 +59,61 @@ object managefile {
   // TODO: more appropriate name
   // TODO: handle exceptions
   def move[S[_]](
-      db: String, src: String, dst: String
+      scenario: MoveScenario, semantics: MoveSemantics
     )(implicit
       S0: Task :<: S
-    ): FileSystemErrT[Free[S, ?], Unit] =
-    dbCxn(db).map { cxn =>
-      val q = s"""ALTER TABLE "$src" RENAME TO "$dst" """
+    ): Free[S, FileSystemError \/ Unit] =
+    (for {
+      src       <- dbTableFromPath(scenario.src)
+      dst       <- dbTableFromPath(scenario.dst)
+      _         <- EitherT.fromDisjunction[Free[S, ?]] {
+                     if (src.db =/= dst.db) FileSystemError.pathErr(
+                       PathError.invalidPath(scenario.dst, "different db from src path")).left
+                     else
+                       ().right
+                   }
+      cxn       <- dbCxn(src.db).liftM[FileSystemErrT]
+
+      // TODO: move tables at path...
+      // srcTables <- tablesWithPrefix(cxn, src.table)
+
+      srcExists <- tableExists(cxn, src.table).liftM[FileSystemErrT]
+      _         <- EitherT.fromDisjunction[Free[S, ?]] {
+                     if (!srcExists)
+                       FileSystemError.pathErr(PathError.pathNotFound(scenario.src)).left
+                     else
+                       ().right
+                   }
+      dstExists <- tableExists(cxn, dst.table).liftM[FileSystemErrT]
+      _         <- EitherT.fromDisjunction[Free[S, ?]](semantics match {
+                     case MoveSemantics.FailIfExists if dstExists =>
+                       FileSystemError.pathErr(PathError.pathExists(scenario.dst)).left
+                     case MoveSemantics.FailIfMissing if !dstExists =>
+                       FileSystemError.pathErr(PathError.pathNotFound(scenario.dst)).left
+                     case _ =>
+                       ().right[FileSystemError]
+                   })
+    } yield {
+      val q = s"""ALTER TABLE "${src.table}" RENAME TO "${dst.table}" """
+      println(s"q: $q")
       val st = cxn.createStatement()
-      val _ = st.executeUpdate(q)
-    }.liftM[FileSystemErrT]
+      cxn.setAutoCommit(false)
+      val _  = if (dstExists) st.executeUpdate(s"""DROP TABLE "${dst.table}" """)
+      val __ = st.executeUpdate(q)
+      cxn.commit()
+      st.close
+      cxn.close
+    }).run
 
   def delete[S[_]](path: APath)(implicit S0: Task :<: S): Free[S, FileSystemError \/ Unit] = {
     for {
       dt  <- dbTableFromPath(path)
       cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
       tbs <- tablesWithPrefix(cxn, dt.table).liftM[FileSystemErrT]
+      _   <- EitherT.fromDisjunction[Free[S, ?]] {
+               if (tbs.isEmpty) FileSystemError.pathErr(PathError.pathNotFound(path)).left
+               else ().right
+             }
     } yield {
       println(s"managefile delete:\n  path:   $path\n  tables: $tbs")
       tbs.foreach { tableName =>
