@@ -59,12 +59,12 @@ import quasar.Planner.PlannerError
         ???
 
       case ListContents(dir) =>
-        println(s"queryfile ListContents: $dir")
+        // println(s"queryfile ListContents: $dir")
         listContents(dir)
 
       case FileExists(file) =>
         // TODO: handle failures? might need to update the algebra term
-        println(s"queryfile FileExists: $file")
+        // println(s"queryfile FileExists: $file")
         (for {
           dt  <- dbTableFromPath(file)
           cxn <- dbCxn(dt.db).liftM[FileSystemErrT]

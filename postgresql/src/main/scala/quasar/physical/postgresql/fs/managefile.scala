@@ -38,11 +38,11 @@ object managefile {
 
     def apply[A](fs: ManageFile[A]) = fs match {
       case Move(scenario, semantics) =>
-        println(s"managefile Move: $scenario, $semantics")
+        // println(s"managefile Move: $scenario, $semantics")
         move(scenario, semantics)
 
       case Delete(path) =>
-        println(s"managefile Delete: $path")
+        // println(s"managefile Delete: $path")
         delete(path)
 
       case TempFile(path) =>
@@ -104,7 +104,7 @@ object managefile {
         val _  = st.executeUpdate(s"""DROP TABLE IF EXISTS "$dstTable" """)
 
         val q = s"""ALTER TABLE "$srcTable" RENAME TO "$dstTable" """
-        println(s"q: $q")
+        // println(s"q: $q")
         val __ = st.executeUpdate(q)
       }
 
@@ -123,7 +123,7 @@ object managefile {
                else ().right
              }
     } yield {
-      println(s"managefile delete:\n  path:   $path\n  tables: $tbs")
+      // println(s"managefile delete:\n  path:   $path\n  tables: $tbs")
       tbs.foreach { tableName =>
         val q = s"""DROP TABLE "$tableName" """
         val st = cxn.createStatement()
