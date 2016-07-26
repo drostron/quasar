@@ -26,59 +26,64 @@ import simulacrum._
 
 object Planner {
 
-  def mapFunc[T[_[_]]]: Algebra[MapFunc[T, ?], SQLAST] = {
-    case ToString(a1) => ???
-    case _ => ???
+  def mapFunc[T[_[_]]]: Algebra[MapFunc[T, ?], String] = {
+    case ToString(a1) => ""
+    case _ => ""
   }
 
   @typeclass trait Planner[QS[_]] {
-    def plan: AlgebraM[PlannerError \/ ?, QS, SQLAST]
+    def plan: AlgebraM[PlannerError \/ ?, QS, String]
   }
   object Planner {
     implicit def coproduct[F[_]: Planner, G[_]: Planner]: Planner[Coproduct[F, G, ?]] =
       new Planner[Coproduct[F, G, ?]] {
-        def plan: AlgebraM[PlannerError \/ ?, Coproduct[F, G, ?], SQLAST] =
+        def plan: AlgebraM[PlannerError \/ ?, Coproduct[F, G, ?], String] =
           _.run.fold(Planner[F].plan, Planner[G].plan)
       }
   }
 
   implicit def qscriptCore[T[_[_]]]: Planner[QScriptCore[T, ?]] =
     new Planner[QScriptCore[T, ?]] {
-      val plan: AlgebraM[PlannerError \/ ?, QScriptCore[T, ?], SQLAST] = {
-        case qscript.Map(src, f) => ???
-        case qscript.Filter(src, f) => ???
-        case _ => ???
+      val plan: AlgebraM[PlannerError \/ ?, QScriptCore[T, ?], String] = {
+        // case qscript.Map(src, f) => "".right
+        case qscript.Filter(src, f) =>
+          // val mapFuncStr = f.foldMap(new (MapFunc[T, ?] ~> Const[String, ?]) {
+          //   def apply[A](fa: MapFunc[T, A]): Const[String, A] = Const[String, A](mapFunc[T](fa))
+          // })
+          //  s"($src) where (${mapFuncStr.get})"
+          s"($src) where ...".right
+        case _ => "".right
       }
     }
 
   implicit def sourcedPathable[T[_[_]]]: Planner[SourcedPathable[T, ?]] =
     new Planner[SourcedPathable[T, ?]] {
-      val plan: AlgebraM[PlannerError \/ ?, SourcedPathable[T, ?], SQLAST] = {
-        case LeftShift(src, struct, repair) => ???
-        case Union(src, lBranch, rBranch) => ???
+      val plan: AlgebraM[PlannerError \/ ?, SourcedPathable[T, ?], String] = {
+        case LeftShift(src, struct, repair) => "".right
+        case Union(src, lBranch, rBranch) => "".right
       }
     }
 
   implicit def const: Planner[Const[DeadEnd, ?]] =
     new Planner[Const[DeadEnd, ?]] {
-      def plan: AlgebraM[PlannerError \/ ?, Const[DeadEnd, ?], SQLAST] = {
-        case Const(Root) => SQLAST.Literal(SQLData.SQLNull).right
-        case Const(Empty) => ???
+      def plan: AlgebraM[PlannerError \/ ?, Const[DeadEnd, ?], String] = {
+        case Const(Root) => "null".right
+        case Const(Empty) => "".right
       }
     }
 
   implicit def projectBucket[T[_[_]]]: Planner[ProjectBucket[T, ?]] =
     new Planner[ProjectBucket[T, ?]] {
-      def plan: AlgebraM[PlannerError \/ ?, ProjectBucket[T, ?], SQLAST] = {
-        case BucketField(src, value, name)  => ???
-        case BucketIndex(src, value, index) => ???
+      def plan: AlgebraM[PlannerError \/ ?, ProjectBucket[T, ?], String] = {
+        case BucketField(src, value, name)  => "".right
+        case BucketIndex(src, value, index) => "".right
       }
     }
 
   implicit def thetajoin[T[_[_]]]: Planner[ThetaJoin[T, ?]] =
     new Planner[ThetaJoin[T, ?]] {
-      def plan: AlgebraM[PlannerError \/ ?, ThetaJoin[T, ?], SQLAST] = {
-        case ThetaJoin(src, lBranch, rBranch, on, f, combine) => ???
+      def plan: AlgebraM[PlannerError \/ ?, ThetaJoin[T, ?], String] = {
+        case ThetaJoin(src, lBranch, rBranch, on, f, combine) => "".right
       }
     }
 

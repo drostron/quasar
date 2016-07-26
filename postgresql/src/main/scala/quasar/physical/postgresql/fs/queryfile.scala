@@ -17,9 +17,10 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
+import quasar.effect.Read
 import quasar.fp.{κ, free}, free.injectFT
-import quasar.fs._
-import quasar.physical.postgresql.{Planner, SQLAST}, Planner._, Planner.Planner._
+import quasar.fs._, mount.ConnectionUri
+import quasar.physical.postgresql.Planner, Planner._, Planner.Planner._
 import quasar.physical.postgresql.util._
 import quasar.qscript._
 
@@ -33,9 +34,13 @@ object queryfile {
 
 import quasar.Planner.PlannerError
 
-  def evaluate(sqlAST: SQLAST, destinationPath: APath): Task[AFile] = ???
+  def evaluate(sql: String, destinationPath: APath): Task[AFile] = ???
 
-  def interpret[S[_]](implicit S0: Task :<: S): QueryFile ~> Free[S, ?] = new (QueryFile ~> Free[S, ?]) {
+  def interpret[S[_]](
+    implicit
+    S0: Read[ConnectionUri, ?] :<: S,
+    S1: Task :<: S
+  ): QueryFile ~> Free[S, ?] = new (QueryFile ~> Free[S, ?]) {
     def apply[A](qf: QueryFile[A]) = qf match {
       case ExecutePlan(lp, out) => (
           for {
@@ -67,7 +72,7 @@ import quasar.Planner.PlannerError
         // println(s"queryfile FileExists: $file")
         (for {
           dt  <- dbTableFromPath(file)
-          cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
+          cxn <- dbCxn.liftM[FileSystemErrT]
           r   <- tableExists(cxn, dt.table).liftM[FileSystemErrT]
         } yield r).leftMap(κ(false)).merge[Boolean]
     }
@@ -75,13 +80,14 @@ import quasar.Planner.PlannerError
 
   // TODO: handle ☠
   def listContents[S[_]](
-      dir: APath
-    )(implicit
-      S0: Task :<: S
-    ): Free[S, FileSystemError \/ Set[PathSegment]] =
+    dir: APath
+  )(implicit
+    S0: Read[ConnectionUri, ?] :<: S,
+    S1: Task :<: S
+  ): Free[S, FileSystemError \/ Set[PathSegment]] =
     (for {
       dt  <- dbTableFromPath(dir)
-      cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
+      cxn <- dbCxn.liftM[FileSystemErrT]
       r   <- tablesWithPrefix(cxn, dt.table).liftM[FileSystemErrT]
       _   <- EitherT.fromDisjunction[Free[S, ?]] {
                if (r.isEmpty) FileSystemError.pathErr(PathError.pathNotFound(dir)).left

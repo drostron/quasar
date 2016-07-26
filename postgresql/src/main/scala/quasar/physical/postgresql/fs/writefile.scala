@@ -17,9 +17,10 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
+import quasar.effect.Read
 import quasar.DataCodec
 import quasar.effect.{KeyValueStore, MonotonicSeq}
-import quasar.fs._
+import quasar.fs._, mount.ConnectionUri
 import quasar.physical.postgresql.util._
 
 import java.sql.{Connection, Statement}
@@ -36,13 +37,14 @@ object writefile {
     cxn: Connection, st: Statement, tableName: String)
 
   @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
-  def interpret[S[_]](implicit
-      S0: KeyValueStore[WriteHandle, PostgreSQLState, ?] :<: S,
-      S1: MonotonicSeq :<: S,
-      S2: Task :<: S
-    ): WriteFile ~> Free[S, ?] = {
+  def interpret[S[_]](
+    implicit
+    S0: KeyValueStore[WriteHandle, PostgreSQLState, ?] :<: S,
+    S1: MonotonicSeq :<: S,
+    S2: Read[ConnectionUri, ?] :<: S,
+    S3: Task :<: S
+  ): WriteFile ~> Free[S, ?] = {
     val kv = KeyValueStore.Ops[WriteHandle, PostgreSQLState, S]
-    val seq = MonotonicSeq.Ops[S]
 
     new (WriteFile ~> Free[S, ?]) {
       def apply[A](wf: WriteFile[A]) = wf match {
@@ -50,9 +52,9 @@ object writefile {
           // println(s"write open file: $file")
           (for {
             dt   <- dbTableFromPath(file)
-            cxn  <- dbCxn(dt.db).liftM[FileSystemErrT]
+            cxn  <- dbCxn.liftM[FileSystemErrT]
             pgSt <- open(cxn, dt.table).liftM[FileSystemErrT]
-            i    <- seq.next.liftM[FileSystemErrT]
+            i    <- MonotonicSeq.Ops[S].next.liftM[FileSystemErrT]
             h    =  WriteHandle(file, i)
             _    <- kv.put(h, pgSt).liftM[FileSystemErrT]
           } yield h).run
@@ -103,10 +105,10 @@ object writefile {
   // TODO: more appropriate name
   // TODO: val _'s
   def open[S[_]](
-      cxn: Connection, tableName: String
-    )(implicit
-      S0: Task :<: S
-    ): Free[S, PostgreSQLState] =
+    cxn: Connection, tableName: String
+  )(implicit
+    S0: Task :<: S
+  ): Free[S, PostgreSQLState] =
     tableExists(cxn, tableName).map { tblExists =>
       // println(s"write open tblExists: $tblExists")
 

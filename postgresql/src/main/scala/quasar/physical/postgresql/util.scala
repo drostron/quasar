@@ -17,7 +17,9 @@
 package quasar.physical.postgresql
 
 import quasar.Predef._
+import quasar.effect.Read
 import quasar.fs._
+import quasar.fs.mount.ConnectionUri
 
 import java.sql.{Connection, DriverManager}
 
@@ -35,14 +37,14 @@ object util {
   final case class DbTable(db: String, table: String)
 
   def dbCxn[S[_]](
-    dbName: String
-  )(implicit
-    S0: Task :<: S
+    implicit
+    S0: Read[ConnectionUri, ?] :<: S,
+    S1: Task :<: S
   ): Free[S, Connection] =
-    Free.liftF(S0.inj(Task.delay {
-      DriverManager.getConnection(
-        s"jdbc:postgresql://192.168.99.100/$dbName?user=postgres&password=postgres")
-    }))
+    for {
+      uri <- Read.Ops[ConnectionUri, S].ask
+      cxn <- Free.liftF(S1.inj(Task.delay(DriverManager.getConnection(uri.value))))
+    } yield cxn
 
   // TODO: going with ☠ style path table names for the moment, likely not what we want
   def dbTableFromPath[S[_]](f: APath): FileSystemErrT[Free[S, ?], DbTable] =
@@ -54,10 +56,10 @@ object util {
 
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
   def tableExists[S[_]](
-      cxn: Connection, tableName: String
-    )(implicit
-      S0: Task :<: S
-    ): Free[S, Boolean] =
+    cxn: Connection, tableName: String
+  )(implicit
+    S0: Task :<: S
+  ): Free[S, Boolean] =
     Free.liftF(S0.inj(Task.delay {
       val m = cxn.getMetaData
       val r = m.getTables(null, null, tableName, null)
@@ -66,10 +68,10 @@ object util {
 
   @SuppressWarnings(Array("org.wartremover.warts.Var", "org.wartremover.warts.While"))
   def tablesWithPrefix[S[_]](
-      cxn: Connection, tableNamePrefix: String
-    )(implicit
-      S0: Task :<: S
-    ): Free[S, List[String]] =
+    cxn: Connection, tableNamePrefix: String
+  )(implicit
+    S0: Task :<: S
+  ): Free[S, List[String]] =
     Free.liftF(S0.inj(Task.delay {
       val st = cxn.createStatement()
       val rs = st.executeQuery(

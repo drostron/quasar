@@ -18,10 +18,10 @@ package quasar.physical.postgresql.fs
 
 import quasar.Predef._
 import quasar.DataCodec
-import quasar.effect.{KeyValueStore, MonotonicSeq}
+import quasar.effect.{KeyValueStore, MonotonicSeq, Read => ReadEff}
 import quasar.fp.κ
 import quasar.fp.numeric.{Natural, Positive}
-import quasar.fs._
+import quasar.fs._, mount.ConnectionUri
 import quasar.physical.postgresql.util._
 
 import java.sql.{Connection, ResultSet, Statement}
@@ -35,16 +35,17 @@ object readfile {
 
   implicit val codec = DataCodec.Precise
 
-  final case class PostgreSQLState(cxn: Connection, st: Statement, rs: ResultSet)
+  final case class PostgreSQLState(st: Statement, rs: ResultSet)
 
   def interpret[S[_]](
     implicit
-    S0: KeyValueStore[ReadHandle, PostgreSQLState, ?] :<: S,
+    S0: KeyValueStore[ReadFile.ReadHandle, PostgreSQLState, ?] :<: S,
     S1: MonotonicSeq :<: S,
-    S2: Task :<: S)
-    : ReadFile ~> Free[S, ?] = {
+    S2: ReadEff[ConnectionUri, ?] :<: S,
+    S3: Task :<: S
+    ): ReadFile ~> Free[S, ?] = {
+
     val kv = KeyValueStore.Ops[ReadHandle, PostgreSQLState, S]
-    val seq = MonotonicSeq.Ops[S]
 
     // TODO: offload to helper methods once working
     new (ReadFile ~> Free[S, ?]) {
@@ -52,12 +53,12 @@ object readfile {
         case Open(file, offset, limit) =>
           (for {
             dt   <- dbTableFromPath(file)
-            cxn  <- dbCxn(dt.db).liftM[FileSystemErrT]
+            cxn  <- dbCxn.liftM[FileSystemErrT]
             _    <- EitherT(tableExists(cxn, dt.table).map(_
                       .either(())
                       .or(FileSystemError.pathErr(PathError.pathNotFound(file)))))
             pgSt <- open(cxn, dt.table, offset, limit).liftM[FileSystemErrT]
-            i    <- seq.next.liftM[FileSystemErrT]
+            i    <- MonotonicSeq.Ops[S].next.liftM[FileSystemErrT]
             h    =  ReadHandle(file, i)
             _    <- kv.put(h, pgSt).liftM[FileSystemErrT]
           } yield h).run
@@ -82,7 +83,6 @@ object readfile {
             s <- kv.get(h)
             _ =  s.rs.close
             _ =  s.st.close
-            _ =  s.cxn.close
             _ <- kv.delete(h).liftM[OptionT]
           } yield ()).run.void
       }
@@ -108,7 +108,7 @@ object readfile {
       val rs = st.executeQuery(
         s"""select v from "$tableName" $lim offset ${offset.unwrap.toInt}""")
 
-      PostgreSQLState(cxn, st, rs)
+      PostgreSQLState(st, rs)
     }))
 
 }

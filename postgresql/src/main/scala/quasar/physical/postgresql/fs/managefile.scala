@@ -17,8 +17,8 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
-import quasar.effect.MonotonicSeq
-import quasar.fs._
+import quasar.effect.{MonotonicSeq, Read}
+import quasar.fs._, mount.ConnectionUri
 import quasar.physical.postgresql.util._
 
 import pathy.Path._
@@ -31,9 +31,10 @@ object managefile {
   // TODO: move more into helper methods
   def interpret[S[_]](implicit
     S0: MonotonicSeq :<: S,
+    S1: Read[ConnectionUri, ?] :<: S,
     // TODO: something more precise than Task?
-    S1: Task :<: S
-    ): ManageFile ~> Free[S, ?] = new (ManageFile ~> Free[S, ?]) {
+    S2: Task :<: S
+  ): ManageFile ~> Free[S, ?] = new (ManageFile ~> Free[S, ?]) {
     val seq = MonotonicSeq.Ops[S]
 
     def apply[A](fs: ManageFile[A]) = fs match {
@@ -59,10 +60,11 @@ object managefile {
   // TODO: more appropriate name
   // TODO: handle exceptions
   def move[S[_]](
-      scenario: MoveScenario, semantics: MoveSemantics
-    )(implicit
-      S0: Task :<: S
-    ): Free[S, FileSystemError \/ Unit] =
+    scenario: MoveScenario, semantics: MoveSemantics
+  )(implicit
+    S0: Task :<: S,
+    S1: Read[ConnectionUri, ?] :<: S
+  ): Free[S, FileSystemError \/ Unit] =
     (for {
       src       <- dbTableFromPath(scenario.src)
       dst       <- dbTableFromPath(scenario.dst)
@@ -72,7 +74,7 @@ object managefile {
                      else
                        ().right
                    }
-      cxn       <- dbCxn(src.db).liftM[FileSystemErrT]
+      cxn       <- dbCxn.liftM[FileSystemErrT]
       srcExists <- tableExists(cxn, src.table).liftM[FileSystemErrT]
       srcTables <- tablesWithPrefix(cxn, src.table).liftM[FileSystemErrT]
       _         <- EitherT.fromDisjunction[Free[S, ?]] {
@@ -113,10 +115,15 @@ object managefile {
       cxn.close
     }).run
 
-  def delete[S[_]](path: APath)(implicit S0: Task :<: S): Free[S, FileSystemError \/ Unit] = {
+  def delete[S[_]](
+    path: APath
+  )(implicit
+    S0: Task :<: S,
+    S1: Read[ConnectionUri, ?] :<: S
+  ): Free[S, FileSystemError \/ Unit] = {
     for {
       dt  <- dbTableFromPath(path)
-      cxn <- dbCxn(dt.db).liftM[FileSystemErrT]
+      cxn <- dbCxn.liftM[FileSystemErrT]
       tbs <- tablesWithPrefix(cxn, dt.table).liftM[FileSystemErrT]
       _   <- EitherT.fromDisjunction[Free[S, ?]] {
                if (tbs.isEmpty) FileSystemError.pathErr(PathError.pathNotFound(path)).left
