@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package quasar
-package specs2
+package quasar.specs2
 
-import org.specs2.mutable.Specification
+import org.specs2.mutable._
 import org.specs2.specification.core.SpecificationStructure
 import org.specs2.specification.core.Fragments
 
@@ -26,7 +25,7 @@ import org.specs2.specification.core.Fragments
   *
   * Use this when you have tests that muck with global state.
   */
-trait ExclusiveExecution extends SpecificationStructure { self: Specification =>
+trait ExclusiveExecution extends SpecificationStructure { self: SpecificationLike =>
   import ExclusiveExecution._
 
   sequential
