@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-package quasar.physical
-package postgresql
+package quasar.physical.postgresql
 
 import quasar.Predef._
 import quasar.effect.{KeyValueStore, MonotonicSeq, Read}
