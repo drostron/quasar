@@ -22,6 +22,7 @@ import quasar.fp.{κ, free}, free.injectFT
 import quasar.fs._, mount.ConnectionUri
 import quasar.physical.postgresql.Planner, Planner._, Planner.Planner._
 import quasar.physical.postgresql.util._
+import quasar.Planner.PlannerError
 import quasar.qscript._
 
 import matryoshka._, Recursive.ops._
@@ -32,9 +33,10 @@ import scalaz.concurrent.Task
 object queryfile {
   import QueryFile._
 
-import quasar.Planner.PlannerError
-
-  def evaluate(sql: String, destinationPath: APath): Task[AFile] = ???
+  def evaluate(sql: String, destinationPath: APath): Task[AFile] = {
+    println(s"queryfile evaluate sql: $sql")
+    ???
+  }
 
   def interpret[S[_]](
     implicit
@@ -45,6 +47,7 @@ import quasar.Planner.PlannerError
       case ExecutePlan(lp, out) => (
           for {
             qs  <- EitherT(convertToQScript(lp).point[Free[S, ?]])
+            _   =  println(s"queryfile interpret qs: $qs")
             sql <- EitherT(qs.cataM(
                      Planner.Planner[QScriptProject[Fix, ?]].plan).point[Free[S, ?]])
             dst <- injectFT[Task, S].apply(evaluate(sql, out)).liftM[EitherT[?[_], PlannerError, ?]]
