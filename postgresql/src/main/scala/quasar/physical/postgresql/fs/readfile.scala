@@ -18,97 +18,45 @@ package quasar.physical.postgresql.fs
 
 import quasar.Predef._
 import quasar.DataCodec
-import quasar.effect.{KeyValueStore, MonotonicSeq, Read => ReadEff}
-import quasar.fp.κ
-import quasar.fp.numeric.{Natural, Positive}
-import quasar.fs._, mount.ConnectionUri
+import quasar.effect.{KeyValueStore, MonotonicSeq}
+import quasar.fp.free._
+import quasar.fs._
 import quasar.physical.postgresql.util._
 
-import java.sql.{Connection, ResultSet, Statement}
-
+import doobie.imports._
+// import doobie.util.query.Query
 import eu.timepit.refined.api.RefType.ops._
+import shapeless.HNil
 import scalaz._, Scalaz._
-import scalaz.concurrent.Task
 
 object readfile {
-  import ReadFile._
-
   implicit val codec = DataCodec.Precise
-
-  final case class PostgreSQLState(st: Statement, rs: ResultSet)
 
   def interpret[S[_]](
     implicit
-    S0: KeyValueStore[ReadFile.ReadHandle, PostgreSQLState, ?] :<: S,
+    S0: KeyValueStore[ReadFile.ReadHandle, impl.ReadStream[ConnectionIO], ?] :<: S,
     S1: MonotonicSeq :<: S,
-    S2: ReadEff[ConnectionUri, ?] :<: S,
-    S3: Task :<: S
-    ): ReadFile ~> Free[S, ?] = {
+    S3: ConnectionIO :<: S
+  ): ReadFile ~> Free[S, ?] =
+    impl.readFromProcess[S, ConnectionIO] { (file: AFile, readOpts: impl.ReadOpts) =>
+      (for {
+        dt <- EitherT(dbTableFromPath0(file).point[Free[S, ?]])
+        _  <- EitherT(lift(tableExists0(dt.table)).into[S].map(_
+                .either(())
+                .or(FileSystemError.pathErr(PathError.pathNotFound(file)))))
+      } yield {
+        val lim = readOpts.limit.map(lim => s"limit ${lim.unwrap}").orZero
 
-    val kv = KeyValueStore.Ops[ReadHandle, PostgreSQLState, S]
-
-    // TODO: offload to helper methods once working
-    new (ReadFile ~> Free[S, ?]) {
-      def apply[A](rf: ReadFile[A]): Free[S, A] = rf match {
-        case Open(file, offset, limit) =>
-          (for {
-            dt   <- dbTableFromPath(file)
-            cxn  <- dbCxn.liftM[FileSystemErrT]
-            _    <- EitherT(tableExists(cxn, dt.table).map(_
-                      .either(())
-                      .or(FileSystemError.pathErr(PathError.pathNotFound(file)))))
-            pgSt <- open(cxn, dt.table, offset, limit).liftM[FileSystemErrT]
-            i    <- MonotonicSeq.Ops[S].next.liftM[FileSystemErrT]
-            h    =  ReadHandle(file, i)
-            _    <- kv.put(h, pgSt).liftM[FileSystemErrT]
-          } yield h).run
-
-        case Read(h) =>
-          // println(s"read read: $h")
-          kv.get(h)
-            .toRight(FileSystemError.unknownReadHandle(h))
-            .flatMapF(s => (
-                if (!s.rs.next)
-                  Vector.empty.right
-                else
-                  DataCodec.parse(s.rs.getString(1)).bimap(
-                    // TODO: more appropriate error?
-                    κ(FileSystemError.unknownReadHandle(h)),
-                    Vector(_))
-              ).point[Free[S, ?]])
-            .run
-
-        case Close(h) =>
-          (for {
-            s <- kv.get(h)
-            _ =  s.rs.close
-            _ =  s.st.close
-            _ <- kv.delete(h).liftM[OptionT]
-          } yield ()).run.void
-      }
+        // TODO: manually constructing Query0 due seemingly being unable to
+        //       quote table name with current sql interpolator
+        // TODO: How do we make this safe from injection?
+        val qStr = s"""select v from "${dt.table}" $lim offset ${readOpts.offset.unwrap}"""
+        Query[HNil, String](qStr, none)
+          .toQuery0(HNil)
+          .process
+          .map(s => DataCodec.parse(s).bimap(
+            err => FileSystemError.readFailed(s, err.shows),
+            Vector(_)))
+      }).run
     }
-  }
-
-  // TODO: more appropriate name
-  // TODO: val _'s
-  def open[S[_]](
-      cxn: Connection, tableName: String, offset: Natural, limit: Option[Positive]
-    )(implicit
-      S0: Task :<: S
-    ): Free[S, PostgreSQLState] =
-    Free.liftF(S0.inj(Task.delay {
-      val st = cxn.createStatement()
-
-      st.setFetchSize(1)
-
-      // TODO: toInt
-      val lim = limit.map(lim => s"limit ${lim.unwrap.toInt}").orZero
-
-      // TODO: toInt
-      val rs = st.executeQuery(
-        s"""select v from "$tableName" $lim offset ${offset.unwrap.toInt}""")
-
-      PostgreSQLState(st, rs)
-    }))
-
 }

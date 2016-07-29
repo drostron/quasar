@@ -213,7 +213,7 @@ object ReadFilesSpec {
 
   val veryLongFile = TestDatum(
     readsPrefix </> dir("length") </> file("very.long"),
-    manyDocs(100000))
+    manyDocs(10000))
 
   ////
 

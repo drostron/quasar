@@ -23,6 +23,7 @@ import quasar.fs.mount.ConnectionUri
 
 import java.sql.{Connection, DriverManager}
 
+import doobie.imports._
 import pathy.Path
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
@@ -46,13 +47,23 @@ object util {
       cxn <- Free.liftF(S1.inj(Task.delay(DriverManager.getConnection(uri.value))))
     } yield cxn
 
-  // TODO: going with ☠ style path table names for the moment, likely not what we want
-  def dbTableFromPath[S[_]](f: APath): FileSystemErrT[Free[S, ?], DbTable] =
-    EitherT.fromDisjunction[Free[S, ?]](
+  // TODO: going with ☠ style path table names for the moment
+  // TODO: rename to dbTableFromPath
+  def dbTableFromPath0[S[_]](f: APath): FileSystemError \/ DbTable =
     Path.flatten(None, None, None, Some(_), Some(_), f)
       .toIList.unite.uncons(
           FileSystemError.pathErr(PathError.invalidPath(f, "no database specified")).left,
-          (h, t) => DbTable(h, t.intercalate("☠")).right))
+          (h, t) => DbTable(h, t.intercalate("_")).right)
+
+  def dbTableFromPath[S[_]](f: APath): FileSystemErrT[Free[S, ?], DbTable] =
+    EitherT.fromDisjunction[Free[S, ?]](dbTableFromPath0(f))
+
+  def tableExists0(tableName: String): ConnectionIO[Boolean] =
+    sql"""select table_name from information_schema.tables where table_name = $tableName"""
+      .query[String]
+      .list
+      .map{v => println(s"tableExists0 v: $v"); v}
+      .map(_.nonEmpty)
 
   @SuppressWarnings(Array("org.wartremover.warts.Null"))
   def tableExists[S[_]](

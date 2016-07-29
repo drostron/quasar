@@ -23,7 +23,6 @@ import quasar.Data
 import quasar.effect.{KeyValueStore, MonotonicSeq}
 
 import scalaz._, Scalaz._
-import scalaz.concurrent.Task
 import scalaz.stream.Process
 
 object impl {
@@ -63,19 +62,21 @@ object impl {
     }
   }
 
-  type ReadStream = Process[Task, FileSystemError \/ Vector[Data]]
+  type ReadStream[F[_]] = Process[F, FileSystemError \/ Vector[Data]]
 
-  def readFromProcess[S[_]](f: (AFile, ReadOpts) => FileSystemError \/ ReadStream)(
+  def readFromProcess[S[_], F[_]: Monad: Catchable](
+    f: (AFile, ReadOpts) => Free[S, FileSystemError \/ ReadStream[F]]
+  )(
     implicit
-      state: KeyValueStore.Ops[ReadFile.ReadHandle, ReadStream, S],
+      state: KeyValueStore.Ops[ReadFile.ReadHandle, ReadStream[F], S],
       idGen: MonotonicSeq.Ops[S],
-      S0: Task :<: S
+      S0: F :<: S
   ): ReadFile ~> Free[S, ?] =
     new (ReadFile ~> Free[S, ?]) {
       def apply[A](fa: ReadFile[A]): Free[S, A] = fa match {
         case ReadFile.Open(file, offset, limit) =>
           (for {
-            readStream <- EitherT(f(file, ReadOpts(offset, limit)).pure[Free[S,?]])
+            readStream <- EitherT(f(file, ReadOpts(offset, limit)))
             id <- idGen.next.liftM[FileSystemErrT]
             handle = ReadFile.ReadHandle(file, id)
             _ <- state.put(handle, readStream).liftM[FileSystemErrT]
@@ -95,7 +96,7 @@ object impl {
         case ReadFile.Close(handle) =>
           (for {
             stream <- state.get(handle)
-            _      <- injectFT[Task, S].apply(stream.kill.run).liftM[OptionT]
+            _      <- injectFT[F, S].apply(stream.kill.run).liftM[OptionT]
             _      <- state.delete(handle).liftM[OptionT]
           } yield ()).run.void
       }

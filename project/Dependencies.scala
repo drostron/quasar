@@ -67,5 +67,6 @@ object Dependencies {
     "com.propensive"       %% "rapture-json-json4s"   % raptureVersion % "test")
 
   val postgresql = Seq(
-    "postgresql" % "postgresql" % "9.1-901-1.jdbc4" % "compile, test")
+    "org.tpolecat" %% "doobie-core" % "0.3.0"           % "compile, test",
+    "postgresql"   %  "postgresql"  % "9.1-901-1.jdbc4" % "compile, test")
 }

@@ -23,6 +23,7 @@ import quasar.fp.free.{injectNT, injectFT, mapSNT, EnrichNT}
 import quasar.fs._, ReadFile.ReadHandle, WriteFile.WriteHandle
 import quasar.fs.mount.{ConnectionUri, FileSystemDef}, FileSystemDef.DefErrT
 
+import doobie.imports._
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
@@ -31,12 +32,13 @@ package object fs {
 
   // TODO: names
 
-  type ψ2[A] = Coproduct[
-                    KeyValueStore[ReadHandle,  readfile.PostgreSQLState,  ?],
-                    KeyValueStore[WriteHandle, writefile.PostgreSQLState, ?],
+  type ψ3[A] = Coproduct[
+                    KeyValueStore[ReadHandle,  impl.ReadStream[ConnectionIO], ?],
+                    KeyValueStore[WriteHandle, writefile.PostgreSQLState,     ?],
                     A]
-  type ψ1[A]  = Coproduct[MonotonicSeq,           ψ2, A]
-  type ψ0[A]  = Coproduct[Read[ConnectionUri, ?], ψ1, A]
+  type ψ2[A]  = Coproduct[MonotonicSeq,           ψ3, A]
+  type ψ1[A]  = Coproduct[Read[ConnectionUri, ?], ψ2, A]
+  type ψ0[A]  = Coproduct[ConnectionIO,           ψ1, A]
   type ψ[A]   = Coproduct[Task,                   ψ0, A]
 
   def ζ[S[_]](
@@ -46,14 +48,18 @@ package object fs {
       S1: PhysErr :<: S
     ): Free[S, Free[ψ, ?] ~> Free[S, ?]] = {
 
+    val transactor: Transactor[Task] =
+      DriverManagerTransactor[Task]("org.postgresql.Driver", uri.value)
+
     def ε: Task[Free[ψ, ?] ~> Free[S, ?]]  =
       // TODO: add KeyValueStore.fromEmpty
-      (TaskRef(Map.empty[ReadHandle,  readfile.PostgreSQLState])  |@|
-       TaskRef(Map.empty[WriteHandle, writefile.PostgreSQLState]) |@|
+      (TaskRef(Map.empty[ReadHandle,  impl.ReadStream[ConnectionIO]]) |@|
+       TaskRef(Map.empty[WriteHandle, writefile.PostgreSQLState])     |@|
        TaskRef(0L)
      )((kvR, kvW, i) =>
        mapSNT(injectNT[Task, S] compose (
          reflNT[Task]                            :+:
+         transactor.trans                        :+:
          Read.constant[Task, ConnectionUri](uri) :+:
          MonotonicSeq.fromTaskRef(i)             :+:
          KeyValueStore.fromTaskRef(kvR)          :+:
