@@ -17,13 +17,15 @@
 package quasar.physical.postgresql.fs
 
 import quasar.Predef._
-import quasar.fs._
 import quasar.effect.Read
-import quasar.fp.κ
+import quasar.fp.{κ, free}, free.injectFT
 import quasar.fs._, mount.ConnectionUri
+import quasar.Planner.PlannerError
+import quasar.physical.postgresql.{Planner, SQLAST}, Planner._, Planner.Planner._
 import quasar.physical.postgresql.util._
 import quasar.qscript._
 
+import matryoshka._, Recursive.ops._
 import pathy.Path.{DirName, FileName}
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
@@ -31,14 +33,22 @@ import scalaz.concurrent.Task
 object queryfile {
   import QueryFile._
 
+  def evaluate(sqlAST: SQLAST, destinationPath: APath): Task[AFile] = ???
+
   def interpret[S[_]](
     implicit
     S0: Read[ConnectionUri, ?] :<: S,
     S1: Task :<: S
   ): QueryFile ~> Free[S, ?] = new (QueryFile ~> Free[S, ?]) {
     def apply[A](qf: QueryFile[A]) = qf match {
-      case ExecutePlan(lp, out) =>
-        ???
+      case ExecutePlan(lp, out) => (
+          for {
+            qs  <- EitherT(convertToQScript(lp).point[Free[S, ?]])
+            sql <- EitherT(qs.cataM(
+                     Planner.Planner[QScriptProject[Fix, ?]].plan).point[Free[S, ?]])
+            dst <- injectFT[Task, S].apply(evaluate(sql, out)).liftM[EitherT[?[_], PlannerError, ?]]
+          } yield dst
+        ).leftMap(FileSystemError.planningFailed(lp,_)).run.strengthL(Vector.empty)
 
       case EvaluatePlan(lp) =>
         ???

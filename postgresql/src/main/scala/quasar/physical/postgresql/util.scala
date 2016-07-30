@@ -49,8 +49,8 @@ object util {
   // TODO: going with ☠ style path table names for the moment, likely not what we want
   def dbTableFromPath[S[_]](f: APath): FileSystemErrT[Free[S, ?], DbTable] =
     EitherT.fromDisjunction[Free[S, ?]](
-      Path.flatten(None, None, None, Some(_), Some(_), f)
-        .toIList.unite.uncons(
+    Path.flatten(None, None, None, Some(_), Some(_), f)
+      .toIList.unite.uncons(
           FileSystemError.pathErr(PathError.invalidPath(f, "no database specified")).left,
           (h, t) => DbTable(h, t.intercalate("☠")).right))
 
