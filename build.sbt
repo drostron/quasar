@@ -212,7 +212,7 @@ lazy val main = project
   .dependsOn(
     mongodb    % BothScopes,
     skeleton   % BothScopes,
-    sparkcore   % BothScopes,
+    sparkcore  % BothScopes,
     postgresql % BothScopes)
   .settings(oneJarSettings: _*)
   .settings(publishSettings: _*)
@@ -241,6 +241,8 @@ lazy val postgresql = project
   .dependsOn(core % "test->test;compile->compile")
   .settings(oneJarSettings: _*)
   .settings(publishSettings: _*)
+  .settings(libraryDependencies ++= Dependencies.postgresql)
+  // .settings(javacOptions += "-Djdbc.drivers=org.postgresql.Driver")
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val sparkcore = project

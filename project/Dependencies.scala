@@ -65,4 +65,7 @@ object Dependencies {
     "ch.qos.logback"       %  "logback-classic"       % "1.1.7",
     "com.propensive"       %% "rapture-json"          % raptureVersion % "test",
     "com.propensive"       %% "rapture-json-json4s"   % raptureVersion % "test")
+
+  val postgresql = Seq(
+    "postgresql" % "postgresql" % "9.1-901-1.jdbc4" % "compile, test")
 }
