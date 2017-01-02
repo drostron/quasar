@@ -32,6 +32,7 @@ import quasar.physical.couchbase.planner.CBPhaseLog
 import quasar.physical.couchbase.planner.Planner.mapFuncPlanner
 import quasar.qscript.{MapFunc, MapFuncStdLibTestRunner, FreeMapA}
 import quasar.std.StdLibSpec
+import quasar.std.StdLibTestRunner.genPrintableAscii
 
 import matryoshka.data.Fix
 import matryoshka.implicits._
@@ -76,13 +77,14 @@ class CouchbaseStdLibSpec extends StdLibSpec {
                 filter   = None,
                 groupBy  = None,
                 orderBy  = Nil).embed
+        q  <- EitherT(RenderQuery.compact(s).leftMap(
+                FileSystemError.qscriptPlanningFailed(_)
+              ).point[Free[Eff, ?]].liftM[PhaseResultT])
+        _  = println(s"$q;")
         r  <- n1qlResults[Fix, Eff](s) ∘ (_ >>= {
                 case QData.Obj(v) => v.values.toVector
                 case v            => Vector(v)
               })
-        q  <- EitherT(RenderQuery.compact(s).leftMap(
-                FileSystemError.qscriptPlanningFailed(_)
-              ).point[Free[Eff, ?]].liftM[PhaseResultT])
       } yield (q, r)).run.run.foldMap(
         reflNT[Task]                            :+:
         MonotonicSeq.fromZero.unsafePerformSync :+:
@@ -122,16 +124,9 @@ class CouchbaseStdLibSpec extends StdLibSpec {
     ): Result =
       run[TernaryArg](prg, _.fold(arg1, arg2, arg3), expected, ctx)
 
-    // TODO: remove let once '\\' is fixed in N1QL
-    val genPrintableAsciiSansBackslash: Gen[String] =
-      Gen.listOf(Gen.frequency(
-        (64, Gen.choose('\u0020', '\u005B')),
-        (36, Gen.choose('\u005D', '\u007e'))
-      )).map(_.mkString)
-
     val intDomain: Gen[BigInt] = arbitrary[Int] map (BigInt(_))
     val decDomain: Gen[BigDecimal] = arbitrary[Double] map (BigDecimal(_))
-    val stringDomain: Gen[String] = genPrintableAsciiSansBackslash
+    val stringDomain: Gen[String] = genPrintableAscii
   }
 
   TestConfig.fileSystemConfigs(FsType).flatMap(_ traverse_ { case (backend, uri, _) =>

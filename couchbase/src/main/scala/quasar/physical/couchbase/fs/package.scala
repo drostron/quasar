@@ -74,6 +74,7 @@ package object fs {
       DefaultCouchbaseEnvironment
         .builder()
         .queryTimeout(qt.toMillis)
+        .queryEndpoints(8)
         .build()
     )
 
