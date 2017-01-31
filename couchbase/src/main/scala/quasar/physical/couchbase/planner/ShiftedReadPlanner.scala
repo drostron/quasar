@@ -55,6 +55,7 @@ final class ShiftedReadPlanner[T[_[_]]: CorecursiveT, F[_]: Monad: NameGenerator
           Value(true),
           ResultExpr(r, none).wrapNel,
           Keyspace(id(bc.bucket).embed, gId.some).some,
+          join    = none,
           unnest  = none,
           let     = nil,
           filter  = bc.collection.nonEmpty.option(

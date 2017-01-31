@@ -124,7 +124,7 @@ object TestConfig {
 
     TestConfig.testDataPrefix flatMap { prefix =>
       TestConfig.backendRefs.toIList
-        .traverse(r => lookupFileSystem(r, prefix).run.map(SupportedFs(r.ref,_)))
+        .traverse(r => lookupFileSystem(r, prefix).run.map(i => SupportedFs(r.ref, i, i)))
     }
   }
 

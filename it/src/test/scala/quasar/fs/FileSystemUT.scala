@@ -27,10 +27,12 @@ import scalaz.concurrent.Task
 
 final case class SupportedFs[S[_]](
   ref: BackendRef,
-  impl: Option[FileSystemUT[S]]
+  impl: Option[FileSystemUT[S]],
+  // TODO: Name or alternate impl
+  implNonChrooted: Option[FileSystemUT[S]]
 ) {
   def liftIO: SupportedFs[Coproduct[Task, S, ?]] =
-    copy(impl = impl.map(_.liftIO))
+    this.copy(impl = impl.map(_.liftIO), implNonChrooted = implNonChrooted.map(_.liftIO))
 }
 
 /** FileSystem Under Test

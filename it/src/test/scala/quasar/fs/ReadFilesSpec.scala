@@ -65,7 +65,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
 
   implicit val setDataEq = Equal.equalA[Set[Data]]
 
-  fileSystemShould { fs =>
+  fileSystemShould { (fs, _) =>
     implicit val run = fs.testInterpM
 
     "Reading Files" should {
