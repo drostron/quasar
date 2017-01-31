@@ -71,7 +71,9 @@ package object quasar {
     for {
       optimized   <- phase("Optimized", optimizer.optimize(lp).right)
       typechecked <- phase("Typechecked", lpr.ensureCorrectTypes(optimized).disjunction)
-    } yield typechecked
+      // TODO: more appropriate naming?
+      rewritten   <- phase("Rewrite Joins", optimizer.rewriteJoins(typechecked).right)
+    } yield rewritten
 
   /** Identify plans which reduce to a (set of) constant value(s). */
   def refineConstantPlan(lp: Fix[LP]): List[Data] \/ Fix[LP] =

@@ -19,6 +19,7 @@ package quasar.frontend.logicalplan
 import quasar.Predef._
 import quasar._
 import quasar.contrib.shapeless._
+import quasar.fp._
 import quasar.fp.binder._
 import quasar.fp.ski._
 import quasar.frontend.logicalplan.{LogicalPlan => LP}
@@ -29,7 +30,7 @@ import scala.Predef.$conforms
 
 import matryoshka._
 import matryoshka.implicits._
-import scalaz._, Scalaz._
+import scalaz._, Scalaz.{ToIdOps => _, _}
 import shapeless.{Data => _, :: => _, _}
 
 sealed abstract class Component[T, A] {
@@ -41,6 +42,7 @@ sealed abstract class Component[T, A] {
     case NeitherCond(a)  => a
   }
 }
+
 /** A condition that refers to left and right sources using equality, so may be
   * rewritten into the join condition.
   */
@@ -225,6 +227,8 @@ final class Optimizer[T: Equal]
     * 2) Filtering that refers to only side of the join is hoisted prior to the join.
     * The input plan must have been simplified already so that the structure
     * is in a canonical form for inspection.
+    *
+    * TODO: Separate the combining of filter and join from ...
     */
   val rewriteCrossJoinsƒ: LP[(T, T)] => State[NameGen, T] = { node =>
     def preserveFree(x: (T, T)) = preserveFree0(x)(ι)
@@ -235,28 +239,38 @@ final class Optimizer[T: Equal]
     }
 
     def toComp(left: T, right: T)(c: T):
-        Component[T, T] = {
-      c.para[Component[T, T]] {
-        case t if t.map(_._1) ≟ left.project  => LeftCond(ι)
-        case t if t.map(_._1) ≟ right.project => RightCond(ι)
+        (List[Component[T, T]], Component[T, T]) =
+      boundParaM[T, (List[Component[T, T]], ?), LP, Component[T, T]](c) {
+        case t if t.map(_._1) ≟ left.project  => (Nil, LeftCond(ι))
+        case t if t.map(_._1) ≟ right.project => (Nil, RightCond(ι))
 
         case InvokeUnapply(relations.Eq, Sized((_, LeftCond(lc)), (_, RightCond(rc)))) =>
-          EquiCond((l, r) => relations.Eq(lc(l), rc(r)).embed)
+          (Nil, EquiCond((l, r) => relations.Eq(lc(l), rc(r)).embed))
         case InvokeUnapply(relations.Eq, Sized((_, RightCond(rc)), (_, LeftCond(lc)))) =>
-          EquiCond((l, r) => relations.Eq(rc(r), lc(l)).embed)
+          (Nil, EquiCond((l, r) => relations.Eq(rc(r), lc(l)).embed))
+
+        case Typecheck((_, LeftCond(lc)), tpe, (_, cont), (Embed(Constant(Data.NA)), _)) =>
+          (List(LeftCond(l =>
+            Typecheck(lc(l), tpe, Constant[T](Data.Bool(true)).embed, Constant[T](Data.Bool(false)).embed).embed)), cont)
+        case Typecheck((_, RightCond(rc)), tpe, (_, cont), (Embed(Constant(Data.NA)), _)) =>
+          (List(RightCond(r =>
+            Typecheck(rc(r), tpe, Constant[T](Data.Bool(true)).embed, Constant[T](Data.Bool(false)).embed).embed)), cont)
 
         case InvokeUnapply(func @ UnaryFunc(_, _, _, _, _, _, _), Sized(t1)) =>
-          Func.Input1(t1).traverse(_._2).map(lpr.invoke(func, _))
+          (Nil, Func.Input1(t1).traverse(_._2).map(lpr.invoke(func, _)))
 
         case InvokeUnapply(func @ BinaryFunc(_, _, _, _, _, _, _), Sized(t1, t2)) =>
-          Func.Input2(t1, t2).traverse(_._2).map(lpr.invoke(func, _))
+          (Nil, Func.Input2(t1, t2).traverse(_._2).map(lpr.invoke(func, _)))
 
         case InvokeUnapply(func @ TernaryFunc(_, _, _, _, _, _, _), Sized(t1, t2, t3)) =>
-          Func.Input3(t1, t2, t3).traverse(_._2).map(lpr.invoke(func, _))
+          (Nil, Func.Input3(t1, t2, t3).traverse(_._2).map(lpr.invoke(func, _)))
 
-        case t => NeitherCond(t.map(_._1).embed)
+        case Let(ident, form, body) =>
+          (Nil, (form._2 ⊛ body._2)(lpr.let(ident, _, _)))
+
+        case t =>
+          (Nil, NeitherCond(t.map(_._1).embed))
       }
-    }
 
     def assembleCond(conds: List[T]): T =
       conds.foldLeft(lpr.constant(Data.True))(relations.And(_, _).embed)
@@ -284,25 +298,36 @@ final class Optimizer[T: Equal]
               lpr.let(rName, rSrc,
                 lpr.let(rFName,
                   Filter(lpr.free(rName), assembleCond(rights.map(_.run0(lpr.free(rName))))).embed,
-                  lpr.let(jName,
-                    InnerJoin(lpr.free(lFName), lpr.free(rFName),
-                      assembleCond(equis.map(_.run(lpr.free(lFName), lpr.free(rFName))))).embed,
-                    Filter(lpr.free(jName), assembleCond(
-                      others.map(_.run0(JoinDir.Left.projectFrom(lpr.free(jName)), JoinDir.Right.projectFrom(lpr.free(jName)))) ++
-                      neithers.map(_.run0))).embed))))))
+                  InnerJoin(lpr.free(lFName), lpr.free(rFName),
+                    assembleCond(((equis: List[Component[T, T]]) ⊹ others ⊹ neithers)
+                      .map(_.run(lpr.free(lFName), lpr.free(rFName))))).embed
+                  )))))
       }
     }
 
 
     node match {
       case InvokeUnapply(Filter, Sized((src, Embed(InvokeUnapply(InnerJoin, Sized(joinL, joinR, joinCond)))), (cond, _))) =>
-        val comps = flattenAnd(joinCond).map(toComp(joinL, joinR)) ++
-                    flattenAnd(cond).map(toComp(JoinDir.Left.projectFrom(src), JoinDir.Right.projectFrom(src)))
+        val comps = flattenAnd(joinCond).traverse(toComp(joinL, joinR)).bifoldMap(ι)(ι) ++
+                    flattenAnd(cond).traverse(toComp(JoinDir.Left.projectFrom(src), JoinDir.Right.projectFrom(src))).concatenate
         newJoin(joinL, joinR, comps)
       case InvokeUnapply(InnerJoin, Sized((srcL, _), (srcR, _), (_, joinCond))) =>
-        newJoin(srcL, srcR, flattenAnd(joinCond).map(toComp(srcL, srcR)))
+        newJoin(srcL, srcR, (flattenAnd(joinCond).traverse(toComp(srcL, srcR)(_))).bifoldMap(ι)(ι))
       case _ => State.state(node.map(preserveFree).embed)
     }
+  }
+
+  def coalesceJoinFilter: GAlgebra[(T, ?), LP, T] = {
+    case x @ InvokeUnapply(
+        Filter,
+        Sized(
+          (_, Embed(InvokeUnapply(InnerJoin, Sized(joinL, joinR, joinCond)))),
+          cond)) =>
+      // println(s"MATCHED: ${(x: LP[(T[LP], T[LP])]).show}")
+      InnerJoin(joinL, joinR, relations.And(joinCond, preserveFree0(cond)(ι)).embed).embed
+    case x =>
+      // println(s"x: ${x.show}")
+      x.map(_._2).embed
   }
 
   /** Apply universal, type-oblivious transformations intended to
@@ -321,6 +346,8 @@ final class Optimizer[T: Equal]
       // NB: must precede rewriteCrossJoins to normalize Filter/Join shapes:
       lpr.normalizeLets,
 
+      // boundPara(_)(coalesceJoinFilter),
+
       // Now for the big one:
       boundParaS(_)(rewriteCrossJoinsƒ).evalZero,
 
@@ -332,6 +359,31 @@ final class Optimizer[T: Equal]
 
       // This time, fix the names last so they will read naturally:
       lpr.normalizeTempNames
+
+    ).foldLeft1(_ >>> _)
+
+  val rewriteJoins: T => T =
+    NonEmptyList[T => T](
+      // Eliminate extraneous constants, etc.:
+      simplify,
+
+      // NB: must precede normalizeLets to eliminate possibility of shadowing:
+      lpr.normalizeTempNames,
+
+      // NB: must precede rewriteCrossJoins to normalize Filter/Join shapes:
+      lpr.normalizeLets,
+
+      // Now for the big one:
+      boundParaS(_)(rewriteCrossJoinsƒ).evalZero
+
+      // Eliminate trivial bindings introduced in rewriteCrossJoins:
+      // simplify,
+      //
+      // // Final pass to normalize the resulting plans for better matching in tests:
+      // lpr.normalizeLets,
+      //
+      // // This time, fix the names last so they will read naturally:
+      // lpr.normalizeTempNames
 
     ).foldLeft1(_ >>> _)
 }

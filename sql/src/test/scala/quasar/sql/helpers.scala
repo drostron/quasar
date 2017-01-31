@@ -28,7 +28,7 @@ import matryoshka.data.Fix
 import matryoshka.implicits._
 import org.specs2.matcher.MustThrownMatchers._
 import pathy.Path._
-import scalaz._, Scalaz._
+import scalaz._
 
 trait CompilerHelpers extends TermLogicalPlanMatchers {
   val lpf = new LogicalPlanR[Fix[LP]]
@@ -57,7 +57,7 @@ trait CompilerHelpers extends TermLogicalPlanMatchers {
   def compileExp(query: String): Fix[LP] =
     compile(query).fold(
       e => throw new RuntimeException("could not compile query for expected value: " + query + "; " + e),
-      lp => (lpr.normalizeLets _ >>> lpr.normalizeTempNames _)(optimizer.simplify(lp)))
+      optimizer.optimize)
 
   // Compile the given query, including optimization and typechecking
   def fullCompileExp(query: String): Fix[LP] =

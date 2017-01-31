@@ -115,6 +115,23 @@ final class LogicalPlanR[T]
       case _ => None
     }
 
+    case InvokeUnapply(relations.Cond, Sized(a1, a2, a3)) => (a1, a2, a3) match {
+      case (Embed(Let(a, x1, x2)), a2, a3) =>
+        lp.let(a, x1, invoke[nat._3](relations.Cond, Func.Input3(x2, a2, a3))).some
+      case _ => None
+    }
+
+    case InvokeUnapply(func @ TernaryFunc(_, _, _, _, _, _, _), Sized(a1, a2, a3))
+      if func == set.InnerJoin      || func == set.LeftOuterJoin ||
+         func == set.RightOuterJoin || func == set.FullOuterJoin =>
+      (a1, a2, a3) match {
+        case (Embed(Let(a, x1, x2)), a2, a3) =>
+          lp.let(a, x1, invoke[nat._3](func, Func.Input3(x2, a2, a3))).some
+        case (a1, Embed(Let(a, x1, x2)), a3) =>
+          lp.let(a, x1, invoke[nat._3](func, Func.Input3(a1, x2, a3))).some
+        case _ => None
+      }
+
     case InvokeUnapply(func @ TernaryFunc(_, _, _, _, _, _, _), Sized(a1, a2, a3)) => (a1, a2, a3) match {
       case (Embed(Let(a, x1, x2)), a2, a3) =>
         lp.let(a, x1, invoke[nat._3](func, Func.Input3(x2, a2, a3))).some
@@ -127,8 +144,6 @@ final class LogicalPlanR[T]
 
     case Typecheck(Embed(Let(a, x1, x2)), typ, cont, fallback) =>
       lp.let(a, x1, typecheck(x2, typ, cont, fallback)).some
-    case Typecheck(expr, typ, Embed(Let(a, x1, x2)), fallback) =>
-      lp.let(a, x1, typecheck(expr, typ, x2, fallback)).some
     case Typecheck(expr, typ, cont, Embed(Let(a, x1, x2))) =>
       lp.let(a, x1, typecheck(expr, typ, cont, x2)).some
     case t => None

@@ -268,9 +268,11 @@ object view {
     import query.transforms.ExecM
 
     def resolve[A](lp: Fix[LP], op: Fix[LP] => ExecM[A]) =
-      resolveViewRefs[S](lp).run.flatMap(_.fold(
-        e => planningFailed(lp, Planner.InternalError fromMsg e.shows).raiseError[ExecM, A],
-        p => op(p)).run.run)
+      // TODO: "Quasar error: The variable “'__check1” is unbound at a use site."
+      op(lp).run.run
+      // resolveViewRefs[S](lp).run.flatMap(_.fold(
+      //   e => planningFailed(lp, Planner.InternalError fromMsg e.shows).raiseError[ExecM, A],
+      //   p => op(p)).run.run)
 
     def listViews(dir: ADir): Free[S, Set[PathSegment]] =
       mount.viewsHavingPrefix(dir).map(_ foldMap { f =>
