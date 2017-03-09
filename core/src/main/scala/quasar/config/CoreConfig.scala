@@ -16,18 +16,18 @@
 
 package quasar.config
 
-import quasar.fs.mount.MountingsConfig
-
 import argonaut._, Argonaut._
 import monocle.macros.Lenses
 
-@Lenses final case class CoreConfig(mountings: MountingsConfig)
+import scalaz._, Scalaz._
+
+@Lenses final case class CoreConfig(metastore: MetaStoreConfig)
 
 object CoreConfig {
   implicit val configOps: ConfigOps[CoreConfig] = new ConfigOps[CoreConfig] {
-    val default = CoreConfig(MountingsConfig.empty)
+    val default = MetaStoreConfig.configOps.default ∘ (CoreConfig(_))
   }
 
   implicit val codec: CodecJson[CoreConfig] =
-    casecodec1(CoreConfig.apply, CoreConfig.unapply)("mountings")
+    casecodec1(CoreConfig.apply, CoreConfig.unapply)("metastore")
 }

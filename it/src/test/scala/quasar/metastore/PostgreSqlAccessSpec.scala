@@ -14,31 +14,10 @@
  * limitations under the License.
  */
 
-package quasar.config
+package quasar.metastore
 
-import slamdata.Predef._
-import quasar.config.WebConfigArbitrary._
-import quasar.db.DbConnectionConfig
+import quasar.TestConfig
 
-import eu.timepit.refined._
-
-class WebConfigSpec extends ConfigSpec[WebConfig] {
-
-  val TestConfig: WebConfig = WebConfig(
-    server = ServerConfig(refineMV(92)),
-    metastore = MetaStoreConfig(DbConnectionConfig.H2("/h2")))
-
-  val TestConfigStr =
-    s"""{
-      |  "server": {
-      |    "port": 92
-      |  },
-      |  "metastore": {
-      |    "database": {
-      |      "h2": {
-      |        "file": "/h2"
-      |      }
-      |    }
-      |  }
-      |}""".stripMargin
+class PostgreSqlAccessSpec extends MetaStoreAccessSpec with PostgreSqlMetaStoreFixture {
+  def postgresConfigStr = TestConfig.confValue("postgresql_metastore")
 }

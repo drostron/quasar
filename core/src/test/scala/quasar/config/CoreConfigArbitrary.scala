@@ -16,15 +16,14 @@
 
 package quasar.config
 
-import quasar.fs.mount.{MountingsConfig, MountingsConfigArbitrary}
+import quasar.db.DbConnectionConfig
+import quasar.db.DbConnectionConfigArbitrary._
 
 import org.scalacheck.Arbitrary
 
 trait CoreConfigArbitrary {
-  import MountingsConfigArbitrary._
-
   implicit val coreConfigArbitrary: Arbitrary[CoreConfig] =
-    Arbitrary(Arbitrary.arbitrary[MountingsConfig] map (CoreConfig(_)))
+    Arbitrary(Arbitrary.arbitrary[DbConnectionConfig] map (c => CoreConfig(MetaStoreConfig(c))))
 }
 
 object CoreConfigArbitrary extends CoreConfigArbitrary

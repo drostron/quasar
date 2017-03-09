@@ -68,6 +68,16 @@ object MountConfig {
   implicit def equal: Equal[MountConfig] =
     Equal.equalBy(m => (viewConfig.getOption(m), fileSystemConfig.getOption(m), moduleConfig.getOption(m)))
 
+  val toConfigPair: MountConfig => (String, ConnectionUri) = {
+    case ViewConfig(query, vars) =>
+      "view" -> ConnectionUri(viewCfgAsUri(query, vars))
+    case FileSystemConfig(typ, uri) =>
+      typ.value -> uri
+    case ModuleConfig(_) =>
+      // TODO
+      ???
+  }
+
   val fromConfigPair: (String, ConnectionUri) => String \/ MountConfig = {
     case ("view", uri) =>
       viewCfgFromUri(uri.value).map(viewConfig(_))

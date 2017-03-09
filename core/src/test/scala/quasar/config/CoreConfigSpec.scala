@@ -17,28 +17,22 @@
 package quasar.config
 
 import slamdata.Predef._
-import quasar.config.WebConfigArbitrary._
+import quasar.config.CoreConfigArbitrary._
 import quasar.db.DbConnectionConfig
 
-import eu.timepit.refined._
+class CoreConfigSpec extends ConfigSpec[CoreConfig] {
 
-class WebConfigSpec extends ConfigSpec[WebConfig] {
-
-  val TestConfig: WebConfig = WebConfig(
-    server = ServerConfig(refineMV(92)),
+  val TestConfig: CoreConfig = CoreConfig(
     metastore = MetaStoreConfig(DbConnectionConfig.H2("/h2")))
 
-  val TestConfigStr =
+  val TestConfigStr: String =
     s"""{
-      |  "server": {
-      |    "port": 92
-      |  },
-      |  "metastore": {
-      |    "database": {
-      |      "h2": {
-      |        "file": "/h2"
-      |      }
-      |    }
-      |  }
-      |}""".stripMargin
+       |  "metastore": {
+       |    "database": {
+       |      "h2": {
+       |        "file": "/h2"
+       |      }
+       |    }
+       |  }
+       |}""".stripMargin
 }
