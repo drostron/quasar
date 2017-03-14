@@ -8,4 +8,4 @@ addSbtPlugin("io.get-coursier" % "sbt-coursier"  % "1.0.0-M15")
 addSbtPlugin("org.scoverage"   % "sbt-scoverage" % "1.3.3")
 addSbtPlugin("com.slamdata"    % "sbt-slamdata"  % "0.0.12")
 
-scalacOptions ++= commonScalacOptions_2_10
+// scalacOptions ++= commonScalacOptions_2_10
