@@ -3,6 +3,8 @@
 set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
+set -x
+
 #
 # This script is intended to be run by continuous integration tools, allowing
 # actual details of the build and test process to change without having to
