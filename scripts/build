@@ -80,7 +80,7 @@ if [[ "${JOB_NUM##*.}" == "1" ]]; then
 
   # In a fresh JVM process, re-compile without coverage in order to get a jar
   # that does not contain instrumentation. Generate doc.
-  "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} ++$TRAVIS_SCALA_VERSION $CLEAN 'web/assembly'
+  "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} ++$TRAVIS_SCALA_VERSION $CLEAN 'web/assembly' doc
 
   # Test to ensure the JAR file is valid:
   "$SCRIPT_DIR/testJar"
