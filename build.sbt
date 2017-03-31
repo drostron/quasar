@@ -45,7 +45,6 @@ lazy val buildSettings = commonBuildSettings ++ Seq(
   // NB: -Xlint triggers issues that need to be fixed
   scalacOptions --= Seq(
     "-Xlint"),
-  scalacOptions in (Compile, doc) ++= scala.Seq("-verbose"),
   // NB: Some warts are disabled in specific projects. Here’s why:
   //   • AsInstanceOf   – wartremover/wartremover#266
   //   • others         – simply need to be reviewed & fixed
