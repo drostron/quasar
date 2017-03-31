@@ -42,4 +42,4 @@ sleep 5
 
 curl -v -X POST $CB:8091/sampleBuckets/install -d '["beer-sample"]'
 
-sleep 5
+sleep 10
