@@ -103,15 +103,15 @@ cleanup_testing_conf_file() {
 
 usage() {
 cat << EOF
-Usage: $0 [-h] [-a] [-c TEST-CONF-KEY]
+Usage: $0 [-h] [-a] [-c CONTAINER-NAME]
 Assembles Quasar integration configuration file, it/testing.conf, from currently running
 continers. Works for local development and within travis-ci.
 
   -h                   help (also trigged with no parameters): display this help and exit
   -a                   cleans existing testing.conf and adds testing.conf entries for all currently running quasar test containers
-  -i TEST-CONF-KEY     add TEST-CONF-KEY entry to existing testing.conf file
-  -c TEST-CONF-KEY     cleans exisitng testing.conf and adds a entry for TEST-CONF-KEY
-  -t                   create testing.conf with all currently running containers plus spark local entry
+  -i CONTAINER-NAME    add CONTAINER-NAME entry to existing testing.conf file
+  -c CONTAINER-NAME    cleans exisitng testing.conf and adds a entry for CONTAINER-NAME
+  -t                   add spark local entry to testing.conf
 EOF
 }
 
@@ -143,9 +143,8 @@ while getopts ":hastpc:i:" opt; do
       container_lookup $OPTARG
       ;;
     t)
-      echo "creating testing.conf with all currently running containers plus spark local entry" >&2
-      ./$0 -a
-      ./$0 -i spark_local_test
+      echo "adding spark local entry to testing.conf..." >&2
+      ./$0 -i quasar_spark_local_test
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
