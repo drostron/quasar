@@ -3,27 +3,14 @@
 set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
-# TODO: Sunset this?
-##########################################
-# generic function to init containers
-# init scripts are copied to
-# the container and ran within the container
-#
-init_containerdb() {
-  CONTAINERNAME=$1
-  DBNAME=$(echo "$CONTAINERNAME" | cut -d_ -f2)
-  CAPDBNAME="$(tr '[:lower:]' '[:upper:]' <<< ${DBNAME:0:1})${DBNAME:1}"
-  docker cp init$CAPDBNAME $CONTAINERNAME:/tmp/init$CAPDBNAME
-  docker exec $CONTAINERNAME /tmp/init$CAPDBNAME ${2:-}
-}
-
 ##########################################
 # methods to intialize various databases
 #
 init_mongo() {
   # only mongodb_read_only needs to be configured
   echo "configuring mongodb_read_only..."
-  init_containerdb mongodb_read_only
+  docker cp initMongodb quasar_mongodb_read_only:/tmp/initMongodb
+  docker exec quasar_mongodb_read_only /tmp/initMongodb
 }
 
 init_metastore() {
@@ -39,13 +26,15 @@ init_postgresql() {
   # a restart of the container is needed here due to
   # http://askubuntu.com/questions/308054/how-to-create-s-pgsql-5432
   echo "configuring postgresql..."
-  docker restart postgresql
-  init_containerdb postgresql "quasar-test"
+  docker restart quasar_postgresql
+  docker cp initPostgresql quasar_postgresql:/tmp/initPostgresql
+  docker exec quasar_postgresql /tmp/initPostgresql quasar-test
 }
 
 init_couchbase() {
   echo "configuring couchbase..."
-  init_containerdb couchbase
+  docker cp initCouchbase quasar_couchbase:/tmp/initCouchbase
+  docker exec quasar_couchbase /tmp/initCouchbase
 }
 
 init_marklogic() {
@@ -71,7 +60,7 @@ apply_configuration() {
   if [[ $CONTAINER == "quasar_metastore"         ]]; then init_metastore;                 fi
 }
 
-configure_continers() {
+configure_containers() {
   for CONTAINER in $1
     do
       apply_configuration $CONTAINER
@@ -111,7 +100,7 @@ configure_all_live_containers() {
     echo "in a travis environment, docker is in our path..."
   else
     echo "local environment, looking for docker..."
-    find_continers
+    find_containers
     configure_containers "$CONTAINERS"
   fi
 }
