@@ -120,7 +120,7 @@ for integration tests with Quasar.
   -h                   help (also trigged with no parameters): display this help and exit
   -a                   configure all currently running containers
   -c CONTAINER-NAME    configure running container named CONTAINER-NAME
-  -u "con1,con2..."    use docker-compose up to create and configure a quoted list of CONTAINER-NAMES
+  -u con1[,con2...]    use docker-compose up to create and configure a quoted list of CONTAINER-NAMES
 EOF
 }
 
