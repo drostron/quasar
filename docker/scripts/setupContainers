@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail # STRICT MODE
-IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+IFS_S=$'\n\t'     # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+IFS=$IFS_S
 
 ##########################################
 # methods to intialize various databases
@@ -119,7 +120,7 @@ for integration tests with Quasar.
   -h                   help (also trigged with no parameters): display this help and exit
   -a                   configure all currently running containers
   -c CONTAINER-NAME    configure running container named CONTAINER-NAME
-  -u "con1 con2..."    use docker-compose up to create and configure a quoted list of CONTAINER-NAMES
+  -u "con1,con2..."    use docker-compose up to create and configure a quoted list of CONTAINER-NAMES
 EOF
 }
 
@@ -148,10 +149,10 @@ while getopts ":hac:u:" opt; do
       echo "bringing up the following containers: $OPTARG" >&2
       enable_docker_env
       set -f
-      IFS=' '
+      IFS=,
       CONTAINERS=($OPTARG)
       set +f
-      IFS=$'\n\t'
+      IFS=$IFS_S
       for CONTAINER in "${CONTAINERS[@]}"
       do
         create_database $CONTAINER
