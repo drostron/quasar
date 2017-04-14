@@ -91,7 +91,7 @@ enable_docker_env() {
 }
 
 find_containers() {
-  CONTAINERS=$(docker ps --filter "name=" | awk '{if(NR>1) print $NF}')
+  CONTAINERS=$(docker ps --filter "name=" | awk '{if(NR>1) print $NF}' | grep "quasar_")
 }
 
 configure_all_live_containers() {

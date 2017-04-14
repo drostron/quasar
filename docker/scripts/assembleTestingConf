@@ -127,7 +127,7 @@ while getopts ":hastpc:i:" opt; do
     a)
       echo "cleaning existing testing.conf and adding testing.conf entries for all currently running quasar test containers..." >&2
       cleanup_testing_conf_file
-      CONTAINERS=$(docker ps --filter "name=" | awk '{if(NR>1) print $NF}')
+      CONTAINERS=$(docker ps --filter "name=" | awk '{if(NR>1) print $NF}' | grep "quasar_")
       for CONTAINER in $CONTAINERS
       do
         container_lookup $CONTAINER
