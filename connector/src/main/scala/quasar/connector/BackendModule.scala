@@ -39,8 +39,6 @@ import scalaz.concurrent.Task
 trait BackendModule {
   type QSM[T[_[_]], A] = QS[T]#M[A]
 
-  type ErrorMessages = NonEmptyList[String]
-
   private final implicit def _FunctorQSM[T[_[_]]] = FunctorQSM[T]
   private final implicit def _DelayRenderTreeQSM[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT]: Delay[RenderTree, QSM[T, ?]] = DelayRenderTreeQSM
   private final implicit def _ExtractPathQSM[T[_[_]]: RecursiveT]: ExtractPath[QSM[T, ?], APath] = ExtractPathQSM
@@ -52,9 +50,9 @@ trait BackendModule {
   private final implicit def _UnirewriteT[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] = UnirewriteT[T]
   private final implicit def _UnicoalesceCap[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] = UnicoalesceCap[T]
 
-  final def definition = FileSystemDef fromPF {
+  final def definition: FileSystemDef[Task] = FileSystemDef fromPF {
     case (Type, uri) =>
-      parseConfig(uri).leftMap(_.left[EnvironmentError]) flatMap { cfg =>
+      parseConfig(uri) flatMap { cfg =>
         compile(cfg) map {
           case (int, close) =>
             val runK = λ[Kleisli[M, Config, ?] ~> M](_.run(cfg))
@@ -119,7 +117,7 @@ trait BackendModule {
   }
 
   final def lpToRepr[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT](
-      lp: T[LogicalPlan]): Kleisli[M, Config, PhysicalPlan[Repr]] = {
+      lp: T[LogicalPlan]): Kleisli[M, Config, PhysicalPlan[Repr[T]]] = {
 
     type QSR[A] = QScriptRead[T, A]
 
@@ -154,7 +152,7 @@ trait BackendModule {
 
   implicit def qScriptToQScriptTotal[T[_[_]]]: Injectable.Aux[QSM[T, ?], QScriptTotal[T, ?]]
 
-  type Repr
+  type Repr[T[_[_]]]
   type M[A]
 
   def FunctorQSM[T[_[_]]]: Functor[QSM[T, ?]]
@@ -169,23 +167,25 @@ trait BackendModule {
   def UnicoalesceCap[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT]: Unicoalesce.Capture[T, QS[T]]
 
   type Config
-  def parseConfig(uri: ConnectionUri): EitherT[Task, ErrorMessages, Config]
+  def parseConfig(uri: ConnectionUri): FileSystemDef.DefErrT[Task, Config]
+
+  // def compile(cfg: Config): FileSystemDef.DefErrT[PhysFsEffM, (M ~> PhysFsEffM, PhysFsEffM)]
 
   def compile(cfg: Config): FileSystemDef.DefErrT[Task, (M ~> Task, Task[Unit])]
 
   val Type: FileSystemType
 
   def plan[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT](
-      cp: T[QSM[T, ?]]): M[Repr]
+      cp: T[QSM[T, ?]]): M[Repr[T]]
 
   trait QueryFileModule {
     import QueryFile._
 
-    def executePlan(repr: Repr, out: AFile): Kleisli[M, Config, AFile]
-    def evaluatePlan(repr: Repr): Kleisli[M, Config, ResultHandle]
+    def executePlan[T[_[_]]](repr: Repr[T], out: AFile): Kleisli[M, Config, AFile]
+    def evaluatePlan[T[_[_]]](repr: Repr[T]): Kleisli[M, Config, ResultHandle]
     def more(h: ResultHandle): Kleisli[M, Config, Vector[Data]]
     def close(h: ResultHandle): Kleisli[M, Config, Unit]
-    def explain(repr: Repr): Kleisli[M, Config, String]
+    def explain[T[_[_]]](repr: Repr[T]): Kleisli[M, Config, String]
     def listContents(dir: ADir): Kleisli[M, Config, Set[PathSegment]]
     def fileExists(file: AFile): Kleisli[M, Config, Boolean]
   }

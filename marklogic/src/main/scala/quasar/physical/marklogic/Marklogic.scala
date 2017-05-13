@@ -40,7 +40,7 @@ final class Marklogic(val config: (Positive, Positive)) extends BackendModule {
     ::\::[QScriptCore[T, ?]](::\::[ThetaJoin[T, ?]](::/::[T, Const[ShiftedRead[ADir], ?], Const[Read[AFile], ?]]))
 
   // TODO
-  type Repr = xquery.MainModule
+  type Repr[T[_[_]]] = xquery.MainModule
   type M[A] = FileSystemErrT[PhaseResultT[fs.MLFSQ, ?], A]
 
   def FunctorQSM[T[_[_]]] = Functor[QSM[T, ?]]
@@ -56,7 +56,7 @@ final class Marklogic(val config: (Positive, Positive)) extends BackendModule {
 
   type Config = Unit
 
-  def parseConfig(uri: ConnectionUri): EitherT[Task, ErrorMessages, Config] = ???
+  def parseConfig(uri: ConnectionUri): FileSystemDef.DefErrT[Task, Config] = ???
 
   def compile(cfg: Config): FileSystemDef.DefErrT[Task, (M ~> Task, Task[Unit])] =
     ???
@@ -64,16 +64,16 @@ final class Marklogic(val config: (Positive, Positive)) extends BackendModule {
   val Type = FileSystemType("marklogic")
 
   def plan[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT](
-      cp: T[QSM[T, ?]]): M[Repr] = ???
+      cp: T[QSM[T, ?]]): M[Repr[T]] = ???
 
   object QueryFileModule extends QueryFileModule {
     import QueryFile._
 
-    def executePlan(repr: Repr, out: AFile): Kleisli[M, Config, AFile] = ???
-    def evaluatePlan(repr: Repr): Kleisli[M, Config, ResultHandle] = ???
+    def executePlan[T[_[_]]](repr: Repr[T], out: AFile): Kleisli[M, Config, AFile] = ???
+    def evaluatePlan[T[_[_]]](repr: Repr[T]): Kleisli[M, Config, ResultHandle] = ???
     def more(h: ResultHandle): Kleisli[M, Config, Vector[Data]] = ???
     def close(h: ResultHandle): Kleisli[M, Config, Unit] = ???
-    def explain(repr: Repr): Kleisli[M, Config, String] = ???
+    def explain[T[_[_]]](repr: Repr[T]): Kleisli[M, Config, String] = ???
     def listContents(dir: ADir): Kleisli[M, Config, Set[PathSegment]] = ???
     def fileExists(file: AFile): Kleisli[M, Config, Boolean] = ???
   }

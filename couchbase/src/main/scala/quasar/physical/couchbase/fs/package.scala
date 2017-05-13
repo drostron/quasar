@@ -19,7 +19,7 @@ package quasar.physical.couchbase
 import slamdata.Predef._
 import quasar.connector.EnvironmentError, EnvironmentError.{connectionFailed, invalidCredentials}
 import quasar.contrib.pathy.APath
-import quasar.effect.{KeyValueStore, MonotonicSeq, Read}
+import quasar.effect.{KeyValueStore, MonotonicSeq}
 import quasar.effect.uuid.GenUUID
 import quasar.fp._, free._, ski.κ
 import quasar.fs._, ReadFile.ReadHandle, WriteFile.WriteHandle, QueryFile.ResultHandle
@@ -42,22 +42,15 @@ import scalaz.concurrent.Task
 // TODO: Handle query returned errors field
 
 package object fs {
+  import Couchbase.{Eff, M}
+  import implicits._
+
   val FsType = FileSystemType("couchbase")
 
   val minimumRequiredVersion = new Version(4, 5, 1)
 
   val defaultSocketConnectTimeout: Duration = Duration.ofSeconds(1)
   val defaultQueryTimeout: Duration         = Duration.ofSeconds(300)
-
-  type Eff[A] = (
-    Task                                             :\:
-    Read[Context, ?]                                 :\:
-    MonotonicSeq                                     :\:
-    GenUUID                                          :\:
-    KeyValueStore[ReadHandle,   Cursor,  ?]          :\:
-    KeyValueStore[WriteHandle,  writefile.State,  ?] :/:
-    KeyValueStore[ResultHandle, Cursor, ?]
-  )#M[A]
 
   object CBConnectException {
     def unapply(ex: Throwable): Option[ConnectException] =
@@ -67,13 +60,9 @@ package object fs {
       }
   }
 
+  // TODO: Re-home now that single usage is from Couchbase?
   def context(connectionUri: ConnectionUri): DefErrT[Task, Context] = {
     final case class ConnUriParams(user: String, pass: String, socketConnectTimeout: Duration, queryTimeout: Duration)
-
-    def liftDT[A](v: => NonEmptyList[String] \/ A): DefErrT[Task, A] =
-      EitherT(Task.delay(
-        v.leftMap(_.left[EnvironmentError])
-      ))
 
     def env(p: ConnUriParams): Task[CouchbaseEnvironment] = Task.delay(
       DefaultCouchbaseEnvironment
@@ -89,15 +78,13 @@ package object fs {
          .leftMap(κ(s"$name must be a valid long".wrapNel))
 
     for {
-      uri     <- liftDT(
-                   Uri.fromString(connectionUri.value).leftMap(_.message.wrapNel)
-                 )
-      params  <- liftDT((
+      uri     <- Uri.fromString(connectionUri.value).leftMap(_.message.wrapNel).liftDT
+      params  <- (
                    uri.params.get("username").toSuccessNel("No username in ConnectionUri")   |@|
                    uri.params.get("password").toSuccessNel("No password in ConnectionUri")   |@|
                    duration(uri, "socketConnectTimeoutSeconds", defaultSocketConnectTimeout) |@|
                    duration(uri, "queryTimeoutSeconds", defaultQueryTimeout)
-                 )(ConnUriParams).disjunction)
+                 )(ConnUriParams).disjunction.liftDT
       ev      <- env(params).liftM[DefErrT]
       cluster <- EitherT(Task.delay(
                    CouchbaseCluster.fromConnectionString(ev, uri.renderString).right
@@ -122,53 +109,31 @@ package object fs {
     } yield Context(cluster, cm)
   }
 
-  def interp[S[_]](
-    connectionUri: ConnectionUri
-  )(implicit
-    S0: Task :<: S
-  ): DefErrT[Free[S, ?], (Free[Eff, ?] ~> Free[S, ?], Free[S, Unit])] = {
-
-    def taskInterp(
-      ctx: Context
-    ): Task[(Free[Eff, ?] ~> Free[S, ?], Free[S, Unit])]  =
-      (TaskRef(Map.empty[ReadHandle,   Cursor])          |@|
-       TaskRef(Map.empty[WriteHandle,  writefile.State]) |@|
-       TaskRef(Map.empty[ResultHandle, Cursor])          |@|
-       TaskRef(0L)                                       |@|
+  def interp(ctx: Context): DefErrT[Task, (M ~> Task, Task[Unit])] = {
+    val taskInterp: Task[(Free[Eff, ?] ~> Task, Task[Unit])]  =
+      (TaskRef(Map.empty[ReadHandle,   Cursor]) |@|
+       TaskRef(Map.empty[WriteHandle,  State])  |@|
+       TaskRef(Map.empty[ResultHandle, Cursor]) |@|
+       TaskRef(0L)                              |@|
        GenUUID.type1[Task]
-     )((kvR, kvW, kvQ, i, genUUID) =>
-      (
-        mapSNT(injectNT[Task, S] compose (
-          reflNT[Task]                          :+:
-          Read.constant[Task, Context](ctx)     :+:
-          MonotonicSeq.fromTaskRef(i)           :+:
-          genUUID                               :+:
-          KeyValueStore.impl.fromTaskRef(kvR)   :+:
-          KeyValueStore.impl.fromTaskRef(kvW)   :+:
-          KeyValueStore.impl.fromTaskRef(kvQ))),
-        lift(Task.delay(ctx.cluster.disconnect()).void).into
-      ))
+      )((kvR, kvW, kvQ, i, genUUID) => (
+        foldMapNT[Couchbase.Eff, Task](
+          reflNT[Task]                        :+:
+          MonotonicSeq.fromTaskRef(i)         :+:
+          genUUID                             :+:
+          KeyValueStore.impl.fromTaskRef(kvR) :+:
+          KeyValueStore.impl.fromTaskRef(kvW) :+:
+          KeyValueStore.impl.fromTaskRef(kvQ)),
+        Task.delay(ctx.cluster.disconnect()).void))
 
-    EitherT(lift(context(connectionUri).run >>= (_.traverse(taskInterp))).into)
+    def f = λ[M ~> Free[Eff, ?]](_.run.run >>= {
+      case (_, errA) => lift(errA.fold(e => Task.fail(new RuntimeException(e.shows)), Task.now)).into
+    })
+
+    (taskInterp ∘ (_.leftMap(_ compose f))).liftM[DefErrT]
   }
 
-  def definition[S[_]](implicit
-      S0: Task :<: S,
-      S1: PhysErr :<: S
-    ): FileSystemDef[Free[S, ?]] =
-    FileSystemDef.fromPF {
-      case (FsType, uri) =>
-        interp(uri).map { case (run, close) =>
-          FileSystemDef.DefinitionResult[Free[S, ?]](
-            run compose interpretFileSystem(
-              queryfile.interpret,
-              readfile.interpret,
-              writefile.interpret,
-              managefile.interpret),
-            close)
-        }
-    }
-
+  // TODO: remove
   def bucketCollectionFromPath(p: APath): FileSystemError \/ BucketCollection =
     BucketCollection.fromPath(p) leftMap (FileSystemError.pathErr(_))
 }

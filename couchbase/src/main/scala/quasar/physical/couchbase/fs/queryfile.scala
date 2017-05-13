@@ -51,6 +51,7 @@ object queryfile {
 
   type Plan[S[_], A] = FileSystemErrT[PhaseResultT[Free[S, ?], ?], A]
 
+  // TODO: reintroduce into Couchbase BackendModule
   implicit class LiftF[F[_]: Monad, A](p: F[A]) {
     val liftF = p.liftM[PhaseResultT].liftM[FileSystemErrT]
   }
