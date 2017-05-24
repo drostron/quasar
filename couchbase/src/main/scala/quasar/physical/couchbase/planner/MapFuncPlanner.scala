@@ -153,17 +153,17 @@ final class MapFuncPlanner[T[_[_]]: BirecursiveT: ShowT, F[_]: Monad: NameGenera
     ).embed
 
   def rel(op: N1QL[T[N1QL]]): T[N1QL] = {
-    def handleDates(a1: T[N1QL], a2: T[N1QL], o: (T[N1QL], T[N1QL]) => N1QL[T[N1QL]]): T[N1QL] = {
-      val a1Date = SelectField(a1, str(DateKey)).embed
-      val a2Date = SelectField(a2, str(DateKey)).embed
-      val a1U = unwrap(a1)
-      val a2U = unwrap(a2)
-      IfMissingOrNull(
-        o(DateDiffStr(a1Date, a2Date, day).embed, int(0)).embed,
-        o(DateDiffStr(a1U, a2U, millisecond).embed, int(0)).embed,
-        o(a1, a2).embed
+    def handleDates(a1: T[N1QL], a2: T[N1QL], o: (T[N1QL], T[N1QL]) => N1QL[T[N1QL]]): T[N1QL] =
+      Case(
+        WhenThen(
+          Eq(ObjNames(a1).embed, ObjNames(a2).embed).embed,
+          o(DateDiffStr(unwrap(a1), unwrap(a2), millisecond).embed, int(0)).embed),
+        WhenThen(
+          And(Not(IsObj(a1).embed).embed, Not(IsObj(a2).embed).embed).embed,
+          o(a1, a2).embed)
+      )(
+        Else(Data[T[N1QL]](QData.NA).embed)
       ).embed
-    }
 
     op match {
       case Eq(a1, a2)  => handleDates(a1, a2, Eq(_, _))

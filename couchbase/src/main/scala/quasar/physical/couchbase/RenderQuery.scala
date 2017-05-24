@@ -30,7 +30,7 @@ import scalaz._, Scalaz._
 object RenderQuery {
   import N1QL._, Case._, Select._
 
-  implicit val codec: DataCodec = common.CBDataCodec
+  implicit val codec: DataCodec = CBDataCodec
 
   def compact[T[_[_]]: BirecursiveT](a: T[N1QL]): PlannerError \/ String = {
     val q = a.cataM(alg)
@@ -61,9 +61,9 @@ object RenderQuery {
     case Timestamp(a1) =>
       s"""{ "$TimestampKey": $a1 }""".right
     case Null() =>
-      s"null".right
+      "null".right
     case Unreferenced() =>
-      s"(select value [])".right
+      "(select value [])".right
     case SelectField(a1, a2) =>
       s"$a1.[$a2]".right
     case SelectElem(a1, a2) =>

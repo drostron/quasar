@@ -23,7 +23,7 @@ import quasar.effect.{KeyValueStore, MonotonicSeq, Read}
 import quasar.effect.uuid.GenUUID
 import quasar.fp.free._
 import quasar.fs._
-import quasar.physical.couchbase.common._
+import quasar.physical.couchbase._, common._
 
 import com.couchbase.client.java.document.JsonDocument
 import com.couchbase.client.java.document.json.JsonObject

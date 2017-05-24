@@ -51,8 +51,6 @@ object common {
 
   final case class Cursor(result: Vector[Data])
 
-  val CBDataCodec = DataCodec.Precise
-
   def docTypeValueFromPath(p: APath): DocTypeValue =
     DocTypeValue(Path.flatten(None, None, None, Some(_), Some(_), p).toIList.unite.intercalate("/"))
 
@@ -111,7 +109,7 @@ object common {
   def rowToData(row: N1qlQueryRow): FileSystemError \/ Data = {
     val rowStr = new String(row.byteValue)
 
-    DataCodec.parse(rowStr)(DataCodec.Precise).leftMap(err =>
+    DataCodec.parse(rowStr)(CBDataCodec).leftMap(err =>
       FileSystemError.readFailed(rowStr, err.shows))
   }
 }

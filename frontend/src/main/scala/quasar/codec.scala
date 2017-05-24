@@ -72,7 +72,7 @@ object DataCodec {
   val timeFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
 
-  val Precise = new DataCodec {
+  trait Precise extends DataCodec {
     val TimestampKey = "$timestamp"
     val DateKey = "$date"
     val TimeKey = "$time"
@@ -107,6 +107,17 @@ object DataCodec {
       }
     }
 
+    protected def decodeArr(arr: JsonArray): DataEncodingError \/ Data =
+      arr.traverse(decode).map(Data.Arr(_))
+
+    protected def decodeObj(obj: JsonObject): DataEncodingError \/ Data =
+      obj.toList
+        .traverse { case (k, v) => decode(v).map(k -> _) }
+        .map(pairs => Data.Obj(ListMap(pairs: _*)))
+
+    protected def decodeObjFields(obj: JsonObject): DataEncodingError \/ Data =
+      obj.fields.find(_.startsWith("$")).fold(decodeObj(obj))(κ(-\/(UnescapedKeyError(jObject(obj)))))
+
     def decode(json: Json): DataEncodingError \/ Data =
       json.fold(
         \/-(Data.Null),
@@ -116,15 +127,12 @@ object DataCodec {
           case _           => \/-(Data.Dec(num.toBigDecimal))
         },
         str => \/-(Data.Str(str)),
-        arr => arr.traverse(decode).map(Data.Arr(_)),
+        decodeArr,
         obj => {
           import std.DateLib._
 
           def unpack[A](a: Option[A], expected: String)(f: A => DataEncodingError \/ Data) =
             (a \/> UnexpectedValueError(expected, json)) flatMap f
-
-          def decodeObj(obj: JsonObject): DataEncodingError \/ Data =
-            obj.toList.traverse { case (k, v) => decode(v).map(k -> _) }.map(pairs => Data.Obj(ListMap(pairs: _*)))
 
           obj.toList match {
             case (`TimestampKey`, value) :: Nil => unpack(value.string, "string value for $timestamp")(parseTimestamp(_).leftMap(err => ParseError(err.message)))
@@ -136,10 +144,12 @@ object DataCodec {
               \/.fromTryCatchNonFatal(Data.Binary.fromArray(new sun.misc.BASE64Decoder().decodeBuffer(str))).leftMap(_ => UnexpectedValueError("BASE64-encoded data", json))
             }
             case (`IdKey`, value) :: Nil        => unpack(value.string, "string value for $oid")(str => \/-(Data.Id(str)))
-            case _ => obj.fields.find(_.startsWith("$")).fold(decodeObj(obj))(κ(-\/(UnescapedKeyError(json))))
+            case _ => decodeObjFields(obj)
           }
         })
   }
+
+  object Precise extends Precise
 
   val Readable = new DataCodec {
     def encode(data: Data): Option[Json] = {

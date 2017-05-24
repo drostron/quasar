@@ -25,7 +25,7 @@ import quasar.fp.reflNT
 import quasar.fp.ski.κ
 import quasar.fp.tree.{UnaryArg, BinaryArg, TernaryArg}
 import quasar.fs.FileSystemError
-import quasar.physical.couchbase.common.{CBDataCodec, ClientContext}
+import quasar.physical.couchbase.common.ClientContext
 import quasar.physical.couchbase.fs.{context, FsType}
 import quasar.physical.couchbase.fs.queryfile.n1qlResults
 import quasar.physical.couchbase.planner.CBPhaseLog
